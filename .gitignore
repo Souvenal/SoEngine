@@ -39,3 +39,13 @@
 
 # debug information files
 *.dwo
+
+# CMake
+build
+
+.cache
+.idea
+.vscode
+
+# shaders
+*.spv
