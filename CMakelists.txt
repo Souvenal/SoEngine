@@ -8,8 +8,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(TARGET_NAME "triangle")
 set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/source")
 add_executable(${TARGET_NAME}
+    ${SOURCE_DIR}/vertex.h
+    ${SOURCE_DIR}/descriptor.h
+    ${SOURCE_DIR}/base.h
     ${SOURCE_DIR}/triangle.cpp
-    ${SOURCE_DIR}/vertex.hpp
 )
 target_compile_features(${TARGET_NAME} PRIVATE cxx_std_23)
 
