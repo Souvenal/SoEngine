@@ -5,6 +5,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 #include "base.h"
 #include "vertex.h"
 #include "descriptor.h"
@@ -18,6 +21,7 @@
 #include <map>
 #include <stdexcept>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <chrono>
 
@@ -66,6 +70,8 @@ private:
     const uint32_t WIDTH = 800;
     const uint32_t HEIGHT = 600;
 
+    std::filesystem::path shadersDir;
+
     GLFWwindow* window;
     VkInstance instance;
     VkSurfaceKHR surface;
@@ -113,6 +119,8 @@ private:
     bool framebufferResized {false};
 
 public:
+    TriangleApplication(const std::filesystem::path& path): shadersDir(path) {}
+
     void run() {
         initWindow();
         initVulkan();
@@ -882,8 +890,10 @@ private:
     }
 
     void createGraphicsPipeline() {
-        auto vertShaderCode = readFile("shaders/vert.spv");
-        auto fragShaderCode = readFile("shaders/frag.spv");
+        std::string vertShaderPath = (shadersDir / "vert.spv").string();
+        std::string fragShaderPath = (shadersDir / "frag.spv").string();
+        auto vertShaderCode = readFile(vertShaderPath);
+        auto fragShaderCode = readFile(fragShaderPath);
 
         VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
         VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
@@ -1583,8 +1593,13 @@ VkShaderModule createShaderModule(const std::vector<char>& code) {
     }
 };
 
-int main() {
-    TriangleApplication app;
+int main(int argc, char* argv[]) {
+    std::filesystem::path binPath(argv[0]);
+    std::filesystem::path binDir = binPath.parent_path();
+    std::filesystem::path shadersDir = binDir.parent_path() / "shaders";
+    std::println("{}", shadersDir.string());
+
+    TriangleApplication app(shadersDir);
 
     try {
         app.run();
