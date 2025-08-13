@@ -14,6 +14,25 @@ add_subdirectory(src)
 set(SHADER_SOURCE_DIR "${PROJECT_SOURCE_DIR}/shaders")
 set(SHADER_BINARY_DIR "${PROJECT_SOURCE_DIR}/target/shaders")
 
+add_custom_command(
+    OUTPUT
+        ${SHADER_SOURCE_DIR}/vert.spv
+        ${SHADER_SOURCE_DIR}/frag.spv
+    COMMAND ${SHADER_SOURCE_DIR}/compile.sh
+    WORKING_DIRECTORY ${SHADER_SOURCE_DIR}
+    DEPENDS
+        ${SHADER_SOURCE_DIR}/shader.vert
+        ${SHADER_SOURCE_DIR}/shader.frag
+        ${SHADER_SOURCE_DIR}/compile.sh
+    COMMENT "Compiling shaders"
+)
+
+add_custom_target(compile_shaders ALL
+    DEPENDS
+        ${SHADER_SOURCE_DIR}/vert.spv
+        ${SHADER_SOURCE_DIR}/frag.spv
+)
+
 add_custom_target(copy_shaders ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_BINARY_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -22,8 +41,19 @@ add_custom_target(copy_shaders ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${SHADER_SOURCE_DIR}/frag.spv
         ${SHADER_BINARY_DIR}/frag.spv
-    DEPENDS 
-        ${SHADER_SOURCE_DIR}/vert.spv
-        ${SHADER_SOURCE_DIR}/frag.spv
+    DEPENDS
+        compile_shaders
     COMMENT "Copying shader files to build directory"
+)
+
+set(TEXTURE_SOURCE_DIR "${PROJECT_SOURCE_DIR}/textures")
+set(TEXTURE_BINARY_DIR "${PROJECT_SOURCE_DIR}/target/textures")
+add_custom_target(copy_textures ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${TEXTURE_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${TEXTURE_SOURCE_DIR}/texture.png
+        ${TEXTURE_BINARY_DIR}/texture.png
+    DEPENDS 
+        ${TEXTURE_SOURCE_DIR}/texture.png
+    COMMENT "Copying texture files to build directory"
 )
