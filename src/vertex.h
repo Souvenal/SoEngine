@@ -6,7 +6,7 @@
 #include <array>
 
 struct Vertex {
-    glm::vec2 pos;
+    glm::vec3 pos;
     glm::vec3 color;
     glm::vec2 texCoord;
 
@@ -25,7 +25,7 @@ struct Vertex {
         attributeDescriptions[0] = {
             .location = 0,  // location directive of the input in the vertex shader
             .binding = 0,   // from which binding the per-vertex data comes
-            .format = VK_FORMAT_R32G32_SFLOAT,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
             .offset = offsetof(Vertex, pos)
         };
         attributeDescriptions[1] = {
