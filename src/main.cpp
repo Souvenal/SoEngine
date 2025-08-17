@@ -21,35 +21,18 @@
 #include <vector>
 #include <set>
 #include <map>
+#include <unordered_map>
 #include <stdexcept>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <chrono>
 
-const std::vector<Vertex> vertices {
-    {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
-};
-
-const std::vector<uint16_t> indices {
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
-};
-
 #ifdef NDEBUG
     constexpr bool enableValidationLayers = false;
 #else
     constexpr bool enableValidationLayers = true;
 #endif
-
 
 const std::vector<const char*> validationLayers = {
         "VK_LAYER_KHRONOS_validation"
@@ -78,10 +61,13 @@ bool hasStencilComponent(VkFormat format) {
         format == VK_FORMAT_D24_UNORM_S8_UINT;
 }
 
-class TriangleApplication {
+class Application {
 private:
-    const uint32_t WIDTH = 800;
-    const uint32_t HEIGHT = 600;
+    const uint32_t WIDTH {800};
+    const uint32_t HEIGHT {600};
+
+    const std::string TEXTURE_PATH {"models/amiya-arknights/textures/cloth.png"};
+    // const std::string TEXTURE_PATH {"textures/texture.png"};
 
     std::filesystem::path appDir;
 
@@ -103,6 +89,8 @@ private:
     VkExtent2D swapChainExtent;
     std::vector<VkImageView> swapChainImageViews;
 
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
     VkBuffer indexBuffer;
@@ -141,7 +129,7 @@ private:
     bool framebufferResized {false};
 
 public:
-    TriangleApplication(const std::filesystem::path& path): appDir(path) {}
+    Application(const std::filesystem::path& path): appDir(path) {}
 
     void run() {
         initWindow();
@@ -152,7 +140,7 @@ public:
 
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
         // std::println("resize callback");
-        auto app = reinterpret_cast<TriangleApplication*>(glfwGetWindowUserPointer(window));
+        auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
         app->framebufferResized = true;
     }
 
@@ -207,6 +195,8 @@ private:
         createTextureImage();
         createTextureImageView();
         createTextureSampler();
+
+        loadModel("amiya-arknights");
         createVertexBuffer();
         createIndexBuffer();
         
@@ -887,8 +877,8 @@ private:
 
     void createTextureImage() {
         int texWidth, texHeight, texChannels;
-        std::string texPath = (appDir / "textures" / "texture.png").string();
-        stbi_uc* pixels = stbi_load(texPath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        // std::println("{}", (appDir / TEXTURE_PATH).string());
+        stbi_uc* pixels = stbi_load((appDir / TEXTURE_PATH).c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
         VkDeviceSize imageSize = texWidth * texHeight * 4;
         if (!pixels) {
             throw std::runtime_error("Failed to load texture image!");
@@ -959,6 +949,78 @@ private:
         if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create texture sampler!");
         }
+    }
+
+    void loadModel(const std::string& modelName) {
+        std::filesystem::path modelDir {appDir / "models" / modelName};
+        std::filesystem::path objPath {};
+        for (const auto& entry : std::filesystem::directory_iterator(modelDir)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".obj") {
+                if (objPath.empty()) {
+                    objPath = entry.path();
+                } else {
+                    throw std::runtime_error(std::format("Directory {} has more than one obj file.", modelName));
+                }
+            }
+        }
+        if (objPath.empty()) {
+            throw std::runtime_error(std::format("Directory {} has no obj file.", modelName));
+        }
+
+        tinyobj::attrib_t attrib;
+        std::vector<tinyobj::shape_t> shapes;
+        std::vector<tinyobj::material_t> materials;
+        std::string warn, err;
+
+        bool success = tinyobj::LoadObj(
+            &attrib, &shapes, &materials,
+            &warn, &err,
+            objPath.c_str(), modelDir.c_str()
+        );
+
+        if (!success) {
+            throw std::runtime_error(warn + err);
+        }
+
+        // tinyobj::real_t minX = std::numeric_limits<tinyobj::real_t>::max();
+        // tinyobj::real_t maxX = std::numeric_limits<tinyobj::real_t>::min();
+        // tinyobj::real_t minY = std::numeric_limits<tinyobj::real_t>::max();
+        // tinyobj::real_t maxY = std::numeric_limits<tinyobj::real_t>::min();
+        // tinyobj::real_t minZ = std::numeric_limits<tinyobj::real_t>::max();
+        // tinyobj::real_t maxZ = std::numeric_limits<tinyobj::real_t>::min();
+        std::unordered_map<Vertex, uint32_t> uniqueVertices;
+        for (const auto& shape : shapes) {
+            for (const auto& index : shape.mesh.indices) {
+                Vertex vertex {
+                    .pos {
+                        attrib.vertices[3 * index.vertex_index + 0],
+                        attrib.vertices[3 * index.vertex_index + 1],
+                        attrib.vertices[3 * index.vertex_index + 2]
+                    },
+                    .color {
+                        1.0f, 1.0f, 1.0f
+                    },
+                    .texCoord {
+                        attrib.texcoords[2 * index.texcoord_index + 0],
+                        1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+                    },
+                };
+                // minX = std::min(minX, attrib.vertices[3 * index.vertex_index + 0]);
+                // maxX = std::max(maxX, attrib.vertices[3 * index.vertex_index + 0]);
+                // minY = std::min(minY, attrib.vertices[3 * index.vertex_index + 1]);
+                // maxY = std::max(maxY, attrib.vertices[3 * index.vertex_index + 1]);
+                // minZ = std::min(minZ, attrib.vertices[3 * index.vertex_index + 2]);
+                // maxZ = std::max(maxZ, attrib.vertices[3 * index.vertex_index + 2]);
+
+                if (uniqueVertices.count(vertex) == 0) {
+                    uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+                    vertices.emplace_back(vertex);
+                }
+                indices.emplace_back(uniqueVertices[vertex]);
+            }
+        }
+
+        // std::println("x: [{}, {}], y: [{}, {}], z: [{}, {}]", minX, maxX, minY, maxY, minZ, maxZ);
     }
 
     void createVertexBuffer() {
@@ -1147,7 +1209,7 @@ private:
         }
     }
 
-        void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
         VkCommandBufferBeginInfo beginInfo {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .flags = 0, // Optional
@@ -1186,7 +1248,7 @@ private:
             0, 1, &descriptorSets[currentFrame],
             0, nullptr
         );
-        vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
         VkViewport viewport {
             .x = 0.0f,
@@ -1220,18 +1282,29 @@ private:
         auto currentTime = std::chrono::high_resolution_clock::now();
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
+        // glm::vec3 eye {168, 255, 168};
+        glm::vec3 eye {150, 150, 150};
+        glm::vec3 center {-3, 84, -3};
+        glm::vec3 up {0, 1, 0};
+
         UniformBufferObject ubo {
-            .model = glm::rotate(glm::mat4(1.0f),
+            // .model = glm::rotate(glm::mat4(1.0f),
+            //     time * glm::radians(90.0f),
+            //     glm::vec3(0.0f, 0.0f, 1.0f)
+            // ),
+            .model = glm::rotate(
+                glm::translate(glm::mat4(1.0f), -center),
                 time * glm::radians(90.0f),
-                glm::vec3(0.0f, 0.0f, 1.0f)
+                glm::vec3(0.0f, 1.0f, 0.0f)
             ),
-            .view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
-                glm::vec3(0.0f, 0.0f, 0.0f),
-                glm::vec3(0.0f, 0.0f, 1.0f)
-            ),
+            // .view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
+            //     glm::vec3(0.0f, 0.0f, 0.0f),
+            //     glm::vec3(0.0f, 0.0f, 1.0f)
+            // ),
+            .view = glm::lookAt(eye, glm::vec3(0.0f), up),
             .proj = glm::perspective(glm::radians(45.0f),
                 swapChainExtent.width / static_cast<float>(swapChainExtent.height),
-                0.1f, 10.0f
+                0.1f, 500.0f
             )
         };
         // GLM was designed for OpenGL
@@ -1994,7 +2067,7 @@ int main(int argc, char* argv[]) {
     std::filesystem::path binPath(argv[0]);
     std::filesystem::path appDir = binPath.parent_path().parent_path();
 
-    TriangleApplication app(appDir);
+    Application app(appDir);
 
     try {
         app.run();
