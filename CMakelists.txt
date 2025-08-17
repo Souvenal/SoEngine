@@ -46,14 +46,25 @@ add_custom_target(copy_shaders ALL
     COMMENT "Copying shader files to build directory"
 )
 
-set(TEXTURE_SOURCE_DIR "${PROJECT_SOURCE_DIR}/textures")
-set(TEXTURE_BINARY_DIR "${PROJECT_SOURCE_DIR}/target/textures")
-add_custom_target(copy_textures ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${TEXTURE_BINARY_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${TEXTURE_SOURCE_DIR}/texture.png
-        ${TEXTURE_BINARY_DIR}/texture.png
-    DEPENDS 
-        ${TEXTURE_SOURCE_DIR}/texture.png
-    COMMENT "Copying texture files to build directory"
+# set(TEXTURE_SOURCE_DIR "${PROJECT_SOURCE_DIR}/textures")
+# set(TEXTURE_BINARY_DIR "${PROJECT_SOURCE_DIR}/target/textures")
+# add_custom_target(copy_textures ALL
+#     COMMAND ${CMAKE_COMMAND} -E make_directory ${TEXTURE_BINARY_DIR}
+#     COMMAND ${CMAKE_COMMAND} -E copy_directory
+#         ${TEXTURE_SOURCE_DIR}
+#         ${TEXTURE_BINARY_DIR}
+#     DEPENDS 
+#         ${TEXTURE_SOURCE_DIR}
+#     COMMENT "Copying texture directory to build directory"
+# )
+
+set(MODEL_SOURCE_DIR "${PROJECT_SOURCE_DIR}/models")
+set(MODEL_BINARY_DIR "${PROJECT_SOURCE_DIR}/target/models")
+add_custom_target(copy_models ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${MODEL_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${MODEL_SOURCE_DIR}
+        ${MODEL_BINARY_DIR}
+    DEPENDS ${MODEL_SOURCE_DIR}
+    COMMENT "Copying model directory to build directory"
 )

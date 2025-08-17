@@ -1,0 +1,14 @@
+newmtl object_0
+map_Kd textures/cloth.png
+
+newmtl object_1
+map_Kd textures/skin.png
+
+newmtl object_2
+map_Kd textures/hair.png
+
+newmtl object_3
+map_Kd textures/jacket.png
+
+newmtl object_4
+map_Kd textures/logo.png
