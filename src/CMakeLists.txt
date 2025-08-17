@@ -6,6 +6,7 @@ file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS "*.cpp")
 add_executable(${TARGET_NAME} ${ALL_INCLUDE} ${ALL_SOURCES})
 target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/ext)
 target_link_libraries(${TARGET_NAME} PRIVATE stb)
+target_link_libraries(${TARGET_NAME} PRIVATE tinyobjloader)
 
 target_compile_features(${TARGET_NAME} PRIVATE cxx_std_23)
 

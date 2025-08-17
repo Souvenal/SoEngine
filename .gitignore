@@ -40,6 +40,9 @@
 # debug information files
 *.dwo
 
+# DS_Store
+.DS_Store
+
 # CMake
 build
 target
