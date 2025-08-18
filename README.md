@@ -7,9 +7,7 @@ This is a learning project, for grasping some basic concepts in Vulkan APIs.
 - Vulkan SDK
 
 ## Functions Implemented
-The program successfully built should be able to render a rectangle, using index buffer and vertex buffer, with indices data hardcoded in the cpp file.
-
-After implementing uniform buffer object, it can now render a rotating 3D square.
+The program can load a wavefront obj model from `models` directory, while loading texures. However, it supports only one texure file for mapping.
 
 ## Issues
 Because I'm working on macos, there might be some compatibility issues building on Windows/Linux.
