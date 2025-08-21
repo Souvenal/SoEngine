@@ -1,24 +1,21 @@
 #pragma once
 
+#ifdef __INTELLISENSE__
+#include <vulkan/vulkan_raii.hpp>
+#else
 import vulkan_hpp;
+#endif
 
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
+struct AppInfo {
+    bool dynamicRenderingSupported      { false };
+    bool timelineSemaphoresSupported    { false };
+    bool synchronization2Supported      { false };
 
-#include <cstdint>
-#include <optional>
-#include <vector>
-
-
-struct QueueFamilyIndices {
-    std::optional<uint32_t> graphicsFamily; // support drawing commands
-    std::optional<uint32_t> presentFamily;  // support presentation
-    std::optional<uint32_t> transferFamily; // support transfer operations
-
-    [[nodiscard]] bool isComplete() const {
-        return
-            graphicsFamily.has_value() &&
-            presentFamily.has_value() &&
-            transferFamily.has_value();
+    void printFeatureSupportSummary() {
+        // Print feature support summary
+        std::cout << "\nFeature support summary:\n";
+        std::cout << "- Dynamic Rendering: " << (dynamicRenderingSupported ? "Yes" : "No") << "\n";
+        std::cout << "- Timeline Semaphores: " << (timelineSemaphoresSupported ? "Yes" : "No") << "\n";
+        std::cout << "- Synchronization2: " << (synchronization2Supported ? "Yes" : "No") << "\n";
     }
 };
