@@ -31,7 +31,7 @@
 
 constexpr uint32_t WIDTH {800};
 constexpr uint32_t HEIGHT {600};
-constexpr size_t MAX_FRAMES_IN_FLIGHT { 2 };
+constexpr size_t MAX_FRAMES_IN_FLIGHT { 3 };
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
@@ -199,15 +199,16 @@ private:
 
         if (!appInfo.dynamicRenderingSupported) {
             createRenderPass();
-            createFramebuffers();
         }
-
         createDescriptorSetLayout();
         createGraphicsPipeline();
         createCommandPool();
 
         createColorResources();
         createDepthResources();
+        if (!appInfo.dynamicRenderingSupported) {
+            createFramebuffers();
+        }
         createTextureImage();
         createTextureImageView();
         createTextureSampler();
@@ -370,6 +371,8 @@ private:
             appInfo.synchronization2Supported = true;
             std::println("Synchronization2 supported via extension");
         }
+
+        appInfo.dynamicRenderingSupported = false;
 
         if (appInfo.dynamicRenderingSupported && deviceProperties.apiVersion < vk::ApiVersion13) {
             requiredDeviceExtensions.emplace_back(vk::KHRDynamicRenderingExtensionName);
@@ -596,7 +599,7 @@ private:
             return;
         }
 
-        std::println("Creating traditional framebuffers.");
+        std::println("Creating traditional framebuffers");
 
         swapChainFramebuffers.clear();
         for (size_t i = 0; i < swapChainImageViews.size(); ++i) {
@@ -1175,73 +1178,92 @@ private:
 
     void recordCommandBuffer(uint32_t imageIndex) const {
         graphicsCommandBuffers[currentFrame].begin({});
-        // begin dynamic rendering
-        transitionImageLayout(
-            swapChainImages[imageIndex],
-            vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eColorAttachmentOptimal,
-            {},
-            vk::AccessFlagBits2::eColorAttachmentWrite,
-            vk::PipelineStageFlagBits2::eTopOfPipe,
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            vk::ImageAspectFlagBits::eColor,
-            1
-        );
-        // multisampled color image
-        transitionImageLayout(
-            colorImage,
-            vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eColorAttachmentOptimal,
-            {},
-            vk::AccessFlagBits2::eColorAttachmentWrite,
-            vk::PipelineStageFlagBits2::eTopOfPipe,
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            vk::ImageAspectFlagBits::eColor,
-            1
-        );
-        // depth image
-        transitionImageLayout(
-            depthImage,
-            vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eDepthAttachmentOptimal,
-            {},
-            vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-            vk::PipelineStageFlagBits2::eTopOfPipe,
-            vk::PipelineStageFlagBits2::eEarlyFragmentTests,
-            vk::ImageAspectFlagBits::eDepth,
-            1
-        );
 
-        vk::RenderingAttachmentInfo colorAttachmentInfo {
-            .imageView = colorImageView,
-            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .resolveMode = vk::ResolveModeFlagBits::eAverage,
-            .resolveImageView = swapChainImageViews[imageIndex],
-            .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f}
-        };
-        vk::RenderingAttachmentInfo depthAttachmentInfo {
-            .imageView = depthImageView,
-            .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eDontCare,
-            .clearValue = vk::ClearDepthStencilValue{1.0f, 0}
-        };
+        vk::ClearValue clearColor = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
+        vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
+        vk::ClearValue clearResolve = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
+        std::array clearValues = { clearColor, clearDepth, clearResolve};
 
+        if (appInfo.dynamicRenderingSupported) {
+            // begin dynamic rendering
+            transitionImageLayout(
+                swapChainImages[imageIndex],
+                vk::ImageLayout::eUndefined,
+                vk::ImageLayout::eColorAttachmentOptimal,
+                {},
+                vk::AccessFlagBits2::eColorAttachmentWrite,
+                vk::PipelineStageFlagBits2::eTopOfPipe,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                vk::ImageAspectFlagBits::eColor,
+                1
+            );
+            // multisampled color image
+            transitionImageLayout(
+                colorImage,
+                vk::ImageLayout::eUndefined,
+                vk::ImageLayout::eColorAttachmentOptimal,
+                {},
+                vk::AccessFlagBits2::eColorAttachmentWrite,
+                vk::PipelineStageFlagBits2::eTopOfPipe,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                vk::ImageAspectFlagBits::eColor,
+                1
+            );
+            // depth image
+            transitionImageLayout(
+                depthImage,
+                vk::ImageLayout::eUndefined,
+                vk::ImageLayout::eDepthAttachmentOptimal,
+                {},
+                vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                vk::PipelineStageFlagBits2::eTopOfPipe,
+                vk::PipelineStageFlagBits2::eEarlyFragmentTests,
+                vk::ImageAspectFlagBits::eDepth,
+                1
+            );
 
-        vk::RenderingInfo renderingInfo {
-            .renderArea = {
-                .offset = {0, 0}, .extent = swapChainExtent
-            },
-            .layerCount = 1,
-            .colorAttachmentCount = 1,
-            .pColorAttachments = &colorAttachmentInfo,
-            .pDepthAttachment = &depthAttachmentInfo,
-        };
+            vk::RenderingAttachmentInfo colorAttachmentInfo {
+                .imageView = colorImageView,
+                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .resolveMode = vk::ResolveModeFlagBits::eAverage,
+                .resolveImageView = swapChainImageViews[imageIndex],
+                .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .loadOp = vk::AttachmentLoadOp::eClear,
+                .storeOp = vk::AttachmentStoreOp::eStore,
+                .clearValue = clearColor,
+            };
+            vk::RenderingAttachmentInfo depthAttachmentInfo {
+                .imageView = depthImageView,
+                .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+                .loadOp = vk::AttachmentLoadOp::eClear,
+                .storeOp = vk::AttachmentStoreOp::eDontCare,
+                .clearValue = clearDepth,
+            };
 
-        graphicsCommandBuffers[currentFrame].beginRendering(renderingInfo);
+            vk::RenderingInfo renderingInfo {
+                .renderArea = {
+                    .offset = {0, 0}, .extent = swapChainExtent
+                },
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &colorAttachmentInfo,
+                .pDepthAttachment = &depthAttachmentInfo,
+            };
+
+            graphicsCommandBuffers[currentFrame].beginRendering(renderingInfo);
+        } else {
+            // Use traditional render pass
+            vk::RenderPassBeginInfo renderPassBeginInfo {
+                .renderPass = *renderPass,
+                .framebuffer = *swapChainFramebuffers[imageIndex],
+                .renderArea = {{0, 0}, swapChainExtent},
+                .clearValueCount = static_cast<uint32_t>(clearValues.size()),
+                .pClearValues = clearValues.data(),
+            };
+
+            graphicsCommandBuffers[currentFrame].beginRenderPass(renderPassBeginInfo, vk::SubpassContents::eInline);
+        }
+
         graphicsCommandBuffers[currentFrame].setViewport(0,
             vk::Viewport{
                 0.0f, 0.0f,
@@ -1257,14 +1279,18 @@ private:
             *pipelineLayout, 0, {*descriptorSets[currentFrame]}, {});
         graphicsCommandBuffers[currentFrame].drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
-        graphicsCommandBuffers[currentFrame].endRendering();
+        if (appInfo.dynamicRenderingSupported) {
+            graphicsCommandBuffers[currentFrame].endRendering();
 
-        transitionImageLayout(
-            swapChainImages[imageIndex],
-            vk::ImageLayout::eColorAttachmentOptimal,
-            vk::ImageLayout::ePresentSrcKHR,
-            1
-        );
+            transitionImageLayout(
+                swapChainImages[imageIndex],
+                vk::ImageLayout::eColorAttachmentOptimal,
+                vk::ImageLayout::ePresentSrcKHR,
+                1
+            );
+        } else {
+            graphicsCommandBuffers[currentFrame].endRenderPass();
+        }
 
         graphicsCommandBuffers[currentFrame].end();
     }
