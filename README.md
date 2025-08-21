@@ -8,6 +8,8 @@ This is a learning project, for grasping some basic concepts in Vulkan APIs.
 - stb-image
 - tiny-obj-loader
 
+![](./examples/viking_room.gif)
+
 ## Functions Implemented
 The program can load a wavefront obj model from `models` directory, while loading texures. However, it supports only one texure file for mapping.
 It also enables MSAA for rendering.
