@@ -6,6 +6,8 @@
 import vulkan_hpp;
 #endif
 
+#include <print>
+
 struct AppInfo {
     bool dynamicRenderingSupported      { false };
     bool timelineSemaphoresSupported    { false };
@@ -13,9 +15,9 @@ struct AppInfo {
 
     void printFeatureSupportSummary() {
         // Print feature support summary
-        std::cout << "\nFeature support summary:\n";
-        std::cout << "- Dynamic Rendering: " << (dynamicRenderingSupported ? "Yes" : "No") << "\n";
-        std::cout << "- Timeline Semaphores: " << (timelineSemaphoresSupported ? "Yes" : "No") << "\n";
-        std::cout << "- Synchronization2: " << (synchronization2Supported ? "Yes" : "No") << "\n";
+        std::println("Feature support summary:");
+        std::println("- Dynamic Rendering:      {}", (dynamicRenderingSupported ? "Yes" : "No"));
+        std::println("- Timeline Semaphores:    {}", (timelineSemaphoresSupported ? "Yes" : "No"));
+        std::println("- Synchronization2:       {}", (synchronization2Supported ? "Yes" : "No"));
     }
 };

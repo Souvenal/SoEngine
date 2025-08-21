@@ -1,3 +1,19 @@
+#include "base.h"
+#include "vertex.h"
+#include "descriptor.h"
+
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
+
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+#include <stb_image.h>
+
+#include <tiny_obj_loader.h>
+
 #include <cstdint>      // uint32_t
 #include <limits>       // std::numeric_limits
 #include <algorithm>    // std::clamp
@@ -12,22 +28,6 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
-
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-
-#include <stb_image.h>
-
-#include <tiny_obj_loader.h>
-
-#include "base.h"
-#include "vertex.h"
-#include "descriptor.h"
 
 constexpr uint32_t WIDTH {800};
 constexpr uint32_t HEIGHT {600};
@@ -371,8 +371,6 @@ private:
             appInfo.synchronization2Supported = true;
             std::println("Synchronization2 supported via extension");
         }
-
-        appInfo.dynamicRenderingSupported = false;
 
         if (appInfo.dynamicRenderingSupported && deviceProperties.apiVersion < vk::ApiVersion13) {
             requiredDeviceExtensions.emplace_back(vk::KHRDynamicRenderingExtensionName);
@@ -804,6 +802,12 @@ private:
         };
         pipelineLayout = vk::raii::PipelineLayout{device, pipelineLayoutInfo};
 
+        vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo {
+            .colorAttachmentCount = 1,
+            .pColorAttachmentFormats = &swapChainImageFormat,
+            .depthAttachmentFormat = findDepthFormat(),
+        };
+
         vk::GraphicsPipelineCreateInfo pipelineInfo {
             .stageCount = 2,
             .pStages = shaderStages,
@@ -825,11 +829,6 @@ private:
         // Dynamic rendering
         if (appInfo.dynamicRenderingSupported) {
             std::println("Configuring pipeline for dynamic rendering");
-            vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo {
-                .colorAttachmentCount = 1,
-                .pColorAttachmentFormats = &swapChainImageFormat,
-                .depthAttachmentFormat = findDepthFormat(),
-            };
             pipelineInfo.pNext = &pipelineRenderingCreateInfo,
             pipelineInfo.renderPass = nullptr;
         } else {
