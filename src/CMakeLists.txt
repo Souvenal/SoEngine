@@ -1,27 +1,25 @@
-set(TARGET_NAME vulkanApp)
-
 file(GLOB_RECURSE ALL_INCLUDE CONFIGURE_DEPENDS "*.h")
 file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS "*.cpp")
 
-add_executable(${TARGET_NAME} ${ALL_INCLUDE} ${ALL_SOURCES})
-target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/ext)
-target_link_libraries(${TARGET_NAME} PRIVATE stb)
-target_link_libraries(${TARGET_NAME} PRIVATE tinyobjloader)
+target_sources(${TARGET} PUBLIC ${ALL_INCLUDE} ${ALL_SOURCES})
+target_include_directories(${TARGET} PRIVATE ${PROJECT_SOURCE_DIR}/ext)
+target_link_libraries(${TARGET} PRIVATE stb)
+target_link_libraries(${TARGET} PRIVATE tinyobjloader)
 
-target_compile_features(${TARGET_NAME} PRIVATE cxx_std_23)
+target_compile_features(${TARGET} PRIVATE cxx_std_23)
 
 find_package(glfw3 REQUIRED)
 if (glfw3_FOUND)
-    # target_include_directories(${TARGET_NAME} PRIVATE ${GLFW_INCLUDE_DIRS})
-    target_link_libraries(${TARGET_NAME} PRIVATE glfw)
+#     target_include_directories(${TARGET} PRIVATE ${GLFW_INCLUDE_DIRS})
+    target_link_libraries(${TARGET} PRIVATE glfw)
 else()
     message(FATAL_ERROR "GLFW not found")
 endif()
 
 find_package(glm REQUIRED)
 if (glm_FOUND)
-    # target_include_directories(${TARGET_NAME} PRIVATE ${GLM_INCLUDE_DIRS})
-    target_link_libraries(${TARGET_NAME} PRIVATE glm::glm)
+    # target_include_directories(${TARGET} PRIVATE ${GLM_INCLUDE_DIRS})
+    target_link_libraries(${TARGET} PRIVATE glm::glm)
 else()
     message(FATAL_ERROR "GLM not found")
 endif()
@@ -39,7 +37,7 @@ target_include_directories(VulkanCppModule
     PUBLIC
     "${Vulkan_INCLUDE_DIR}"
 )
-target_include_directories(${TARGET_NAME} PRIVATE
+target_include_directories(${TARGET} PRIVATE
     Vulkan::Headers
 )
 target_link_libraries(VulkanCppModule
@@ -58,4 +56,4 @@ target_sources(VulkanCppModule
     "${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm"
 )
 
-target_link_libraries(${TARGET_NAME} PUBLIC Vulkan::cppm)
+target_link_libraries(${TARGET} PUBLIC Vulkan::cppm)

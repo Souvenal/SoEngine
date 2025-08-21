@@ -1,6 +1,10 @@
 #pragma once
+
+import vulkan_hpp;
+
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+
 #include <glm/glm.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
@@ -12,38 +16,22 @@ struct Vertex {
     glm::vec3 color;
     glm::vec2 texCoord;
 
-    static VkVertexInputBindingDescription getBindingDescription() {
-        VkVertexInputBindingDescription bindingDescription {
+    static vk::VertexInputBindingDescription getBindingDescription() {
+        vk::VertexInputBindingDescription bindingDescription {
             .binding = 0, // index of the binding in the array of bindings
             .stride = sizeof(Vertex), // the number of bytes from one entry to the next
-            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+            .inputRate = vk::VertexInputRate::eVertex
         };
 
         return bindingDescription;
     }
 
-    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions() {
-        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions {};
-        attributeDescriptions[0] = {
-            .location = 0,  // location directive of the input in the vertex shader
-            .binding = 0,   // from which binding the per-vertex data comes
-            .format = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset = offsetof(Vertex, pos)
+    static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions() {
+        return {
+            vk::VertexInputAttributeDescription( 0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos) ),
+            vk::VertexInputAttributeDescription( 1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color) ),
+            vk::VertexInputAttributeDescription( 2, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texCoord) )
         };
-        attributeDescriptions[1] = {
-            .location = 1,
-            .binding = 0,
-            .format = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset = offsetof(Vertex, color)
-        };
-        attributeDescriptions[2] = {
-            .location = 2,
-            .binding = 0,
-            .format = VK_FORMAT_R32G32_SFLOAT,
-            .offset = offsetof(Vertex, texCoord)
-        };
-
-        return attributeDescriptions;
     }
 
     bool operator==(const Vertex& other) const {
@@ -54,14 +42,12 @@ struct Vertex {
     }
 };
 
-namespace std {
-    template<>
-    struct hash<Vertex> {
-        size_t operator()(Vertex const& vertex) const {
-            return ((hash<glm::vec3>{}(vertex.pos)) ^
+template<>
+struct std::hash<Vertex> {
+    size_t operator()(Vertex const& vertex) const noexcept {
+        return ((hash<glm::vec3>{}(vertex.pos)) ^
                 ((hash<glm::vec3>{}(vertex.color) << 1) >> 1) ^
                 (hash<glm::vec2>{}(vertex.texCoord) << 1)
-            );
-        }
-    };
-}
+        );
+    }
+};
