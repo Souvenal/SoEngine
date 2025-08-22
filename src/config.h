@@ -1,12 +1,10 @@
 #pragma once
 
-#ifdef __INTELLISENSE__
-#include <vulkan/vulkan_raii.hpp>
-#else
-import vulkan_hpp;
-#endif
-
 #include <print>
+
+constexpr uint32_t WIDTH {800};
+constexpr uint32_t HEIGHT {600};
+constexpr size_t MAX_FRAMES_IN_FLIGHT { 3 };
 
 struct AppInfo {
     bool dynamicRenderingSupported      { false };
