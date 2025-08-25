@@ -142,6 +142,7 @@ private:
     void setupDebugMessenger();
     void createSurface();
     void pickPhysicalDevice();
+    void checkFeatureSupport();
     void detectFeatureSupport();
     void createLogicalDevice();
 

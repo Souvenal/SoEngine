@@ -59,12 +59,13 @@ void Application::initVulkan() {
     setupDebugMessenger();
     createSurface();        // influence physical device selection
     pickPhysicalDevice();
-    detectFeatureSupport();
+    checkFeatureSupport();
+    // detectFeatureSupport();
     createLogicalDevice();
     createSwapChain();
     createImageViews();
 
-    if (!appInfo.dynamicRenderingSupported) {
+    if (!appInfo.profileSupported && !appInfo.dynamicRenderingSupported) {
         createRenderPass();
     }
     createDescriptorSetLayout();
@@ -73,7 +74,7 @@ void Application::initVulkan() {
 
     createColorResources();
     createDepthResources();
-    if (!appInfo.dynamicRenderingSupported) {
+    if (!appInfo.profileSupported && !appInfo.dynamicRenderingSupported) {
         createFramebuffers();
     }
     createTextureImage();
@@ -93,7 +94,7 @@ void Application::initVulkan() {
     createSyncObjects();
 
     // Print feature support summary
-    appInfo.printFeatureSupportSummary();
+    // appInfo.printFeatureSupportSummary();
 }
 
 void Application::mainLoop() {
@@ -197,6 +198,31 @@ void Application::pickPhysicalDevice() {
     physicalDevice = std::make_unique<vk::raii::PhysicalDevice>(candidates.rbegin()->second);
     msaaSamples = getMaxUsableSampleCount();
     std::println("Physical GPU score: {}", candidates.rbegin()->first);
+}
+
+void Application::checkFeatureSupport() {
+    appInfo.profile = {
+        VP_KHR_ROADMAP_2022_NAME,
+        VP_KHR_ROADMAP_2022_SPEC_VERSION
+    };
+
+    VkBool32 supported = VK_FALSE;
+    VkResult result = vpGetPhysicalDeviceProfileSupport(
+        **instance,
+        **physicalDevice,
+        &appInfo.profile,
+        &supported
+    );
+
+    if (result == VK_SUCCESS && supported == VK_TRUE) {
+        appInfo.profileSupported = true;
+        std::println("Using KHR roadmap 2022 profile");
+    } else {
+        appInfo.profileSupported = false;
+        std::println("Fall back to traditional rendering (profile not supported)");
+
+        detectFeatureSupport();
+    }
 }
 
 void Application::detectFeatureSupport() {
@@ -362,7 +388,7 @@ void Application::createImageViews() {
 }
 
 void Application::createRenderPass() {
-    if (appInfo.dynamicRenderingSupported) {
+    if (appInfo.profileSupported) {
         std::println("Using dynamic rendering, skipping render pass creation.");
         return;
     }
@@ -458,7 +484,7 @@ void Application::createRenderPass() {
 }
 
 void Application::createFramebuffers() {
-    if (appInfo.dynamicRenderingSupported) {
+    if (appInfo.profileSupported) {
         // No framebuffers needed with dynamic rendering
         std::println("Using dynamic rendering, skipping framebuffer creation.");
         return;
@@ -694,7 +720,7 @@ void Application::createGraphicsPipeline() {
     };
 
     // Dynamic rendering
-    if (appInfo.dynamicRenderingSupported) {
+    if (appInfo.profileSupported || appInfo.dynamicRenderingSupported) {
         std::println("Configuring pipeline for dynamic rendering");
         pipelineInfo.pNext = &pipelineRenderingCreateInfo,
         pipelineInfo.renderPass = nullptr;
@@ -1050,7 +1076,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) const {
     vk::ClearValue clearResolve = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
     std::array clearValues = { clearColor, clearDepth, clearResolve};
 
-    if (appInfo.dynamicRenderingSupported) {
+    if (appInfo.profileSupported || appInfo.dynamicRenderingSupported) {
         // begin dynamic rendering
         transitionImageLayout(
             swapChainImages[imageIndex],
@@ -1145,7 +1171,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) const {
         *pipelineLayout, 0, {*descriptorSets[currentFrame]}, {});
     graphicsCommandBuffers[currentFrame].drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
-    if (appInfo.dynamicRenderingSupported) {
+    if (appInfo.profileSupported) {
         graphicsCommandBuffers[currentFrame].endRendering();
 
         transitionImageLayout(
