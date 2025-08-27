@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "vertex.h"
+#include "modelObject.hpp"
 #include "descriptor.h"
 
 #define GLFW_INCLUDE_VULKAN
@@ -42,14 +43,6 @@ private:
     AppInfo appInfo;
     std::filesystem::path appDir;
 
-    const std::string TEXTURE_PATH {"models/viking_room/textures/viking_room.ktx2"};
-    float minX { std::numeric_limits<float>::max() };
-    float maxX { std::numeric_limits<float>::min() };
-    float minY { minX };
-    float maxY { maxX };
-    float minZ { minX };
-    float maxZ { maxX };
-
     GLFWwindow*                                 window { nullptr };
     vk::raii::Context                           context {};
     std::unique_ptr<vk::raii::Instance>         instance;
@@ -89,8 +82,6 @@ private:
 
     uint32_t                mipLevels {0};
     ktxVulkanTexture        texture;
-    // vk::raii::Image         textureImage { nullptr };
-    // vk::raii::DeviceMemory  textureImageMemory { nullptr };
     vk::raii::ImageView     textureImageView { nullptr };
     vk::raii::Sampler       textureSampler { nullptr };
 
@@ -101,13 +92,13 @@ private:
     vk::raii::Buffer        indexBuffer { nullptr };
     vk::raii::DeviceMemory  indexBufferMemory { nullptr };
 
-    std::vector<vk::raii::Buffer>       uniformBuffers {};
-    std::vector<vk::raii::DeviceMemory> uniformBuffersMemory {};
-    std::vector<void*>                  uniformBuffersMapped {};
+    // std::vector<vk::raii::Buffer>       uniformBuffers {};
+    // std::vector<vk::raii::DeviceMemory> uniformBuffersMemory {};
+    // std::vector<void*>                  uniformBuffersMapped {};
 
     vk::raii::DescriptorSetLayout           descriptorSetLayout { nullptr };
     vk::raii::DescriptorPool                descriptorPool { nullptr };
-    std::vector<vk::raii::DescriptorSet>    descriptorSets {};
+    // std::vector<vk::raii::DescriptorSet>    descriptorSets {};
 
     vk::raii::PipelineLayout                pipelineLayout { nullptr };
     vk::raii::Pipeline                      graphicsPipeline { nullptr };
@@ -120,6 +111,16 @@ private:
     std::vector<vk::raii::Semaphore>    renderFinishedSemaphores;
     std::vector<vk::raii::Fence>        inFlightFences;
     size_t      currentFrame {0};
+
+    std::array<ModelObject, MAX_OBJECTS>        modelObjects {};
+
+    const std::string TEXTURE_PATH {"models/viking_room/textures/viking_room.ktx2"};
+    float minX { std::numeric_limits<float>::max() };
+    float maxX { std::numeric_limits<float>::min() };
+    float minY { minX };
+    float maxY { maxX };
+    float minZ { minX };
+    float maxZ { maxX };
 
     std::vector<const char*> requiredDeviceExtensions = {
     #ifdef __APPLE__
@@ -163,6 +164,7 @@ private:
     void createTextureSampler();
 
     void loadModel(const std::string& modelName);
+    void setupModelObjects();
     void createVertexBuffer();
     void createIndexBuffer();
     void createUniformBuffers();
@@ -173,7 +175,7 @@ private:
     void createSyncObjects();
 
     void recordCommandBuffer(uint32_t imageIndex) const;
-    void updateUniformBuffer(uint32_t currentImage) const;
+    void updateUniformBuffer(uint32_t currentImage);
     void drawFrame();
 
     /**
