@@ -2,6 +2,11 @@
 
 #include "config.h"
 
+#define TINYGLTF_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STB_IMAGE_IMPLEMENTATION
+#include <tiny_gltf.h>
+
 #include <set>
 #include <iostream>
 #include <fstream>
@@ -107,6 +112,8 @@ void Application::mainLoop() {
 }
 
 void Application::cleanup() {
+    ktxVulkanTexture_Destruct(&texture, *device, nullptr);
+
     cleanupSwapChain();
 
     glfwDestroyWindow(window);
@@ -777,50 +784,50 @@ void Application::createDepthResources() {
 }
 
 void Application::createTextureImage() {
-    int texWidth, texHeight, texChannels;
-    // std::println("{}", (appDir / TEXTURE_PATH).string());
-    stbi_uc* pixels = stbi_load((appDir / TEXTURE_PATH).c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-    if (!pixels) {
-        throw std::runtime_error("Failed to load texture image!");
+    // Load KTX2 texture
+    ktxVulkanDeviceInfo* vdi = ktxVulkanDeviceInfo_Create(
+        **physicalDevice, *device,
+        *transferQueue, *transferCommandPool, nullptr);
+
+    ktxTexture2* kTexture;
+    KTX_error_code ktxResult = ktxTexture2_CreateFromNamedFile(
+        (appDir / TEXTURE_PATH).c_str(),
+        KTX_TEXTURE_CREATE_NO_FLAGS,
+        &kTexture);
+    if (ktxResult != KTX_SUCCESS) {
+        throw std::runtime_error(std::format("Failed to load ktx texture image \"{}\"", TEXTURE_PATH));
     }
-    mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
+    mipLevels = kTexture->numLevels;
+    // auto props = physicalDevice->getFormatProperties(vk::Format::eR8G8B8Srgb);
+    // std::println("linearTilingFeatures: {}", props.linearTilingFeatures);
+    // std::println("optimalTilingFeatures: {}", props.optimalTilingFeatures);
+    // std::println("format: {}, miplevels: {}", kTexture->vkFormat, mipLevels);
+    kTexture->vkFormat = VK_FORMAT_R8G8B8A8_SRGB;
 
-    vk::DeviceSize imageSize = texWidth * texHeight * 4;
-    vk::raii::Buffer stagingBuffer {{}};
-    vk::raii::DeviceMemory stagingBufferMemory {{}};
-    createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        stagingBuffer, stagingBufferMemory
-    );
+    ktxResult = ktxTexture2_VkUploadEx(kTexture, vdi, &texture,
+        VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    switch (ktxResult) {
+        case KTX_SUCCESS:
+            // Success, no action needed.
+            break;
+        case KTX_INVALID_VALUE:
+            throw std::runtime_error("KTX error: Invalid value (possibly incomplete parameters or callbacks)");
+        case KTX_INVALID_OPERATION:
+            throw std::runtime_error("KTX error: Invalid operation (unsupported format, tiling, usageFlags, mipmap generation, or too many mip levels/layers)");
+        case KTX_OUT_OF_MEMORY:
+            throw std::runtime_error("KTX error: Out of memory (insufficient memory on CPU or Vulkan device)");
+        case KTX_UNSUPPORTED_FEATURE:
+            throw std::runtime_error("KTX error: Unsupported feature (sparse binding of KTX textures is not supported)");
+        default:
+            throw std::runtime_error("KTX error: Unknown error code");
+    }
 
-    void* data = stagingBufferMemory.mapMemory(0, imageSize);
-    memcpy(data, pixels, static_cast<size_t>(imageSize));
-    stagingBufferMemory.unmapMemory();
-
-    stbi_image_free(pixels);
-
-    createImage(texWidth, texHeight,
-        mipLevels, vk::SampleCountFlagBits::e1,
-        vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-        vk::MemoryPropertyFlagBits::eDeviceLocal,
-        textureImage, textureImageMemory
-    );
-
-    transitionImageLayout(
-        textureImage,
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eTransferDstOptimal,
-        mipLevels
-    );
-    copyBufferToImage(stagingBuffer, textureImage,
-        static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight)
-    );
-    generateMipmaps(textureImage, vk::Format::eR8G8B8A8Srgb, texWidth, texHeight, mipLevels);
+    ktxTexture_Destroy(ktxTexture(kTexture));
+    ktxVulkanDeviceInfo_Destroy(vdi);
 }
 
 void Application::createTextureImageView() {
-    textureImageView = createImageView(textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, mipLevels);
+    textureImageView = createImageView(texture.image, texture.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
 }
 
 void Application::createTextureSampler() {
@@ -847,65 +854,125 @@ void Application::createTextureSampler() {
 
 void Application::loadModel(const std::string& modelName) {
     std::filesystem::path modelDir {appDir / "models" / modelName};
-    std::filesystem::path objPath {};
+    std::filesystem::path modelPath {};
     for (const auto& entry : std::filesystem::directory_iterator(modelDir)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".obj") {
-            if (objPath.empty()) {
-                objPath = entry.path();
+        if (entry.is_regular_file() && entry.path().extension() == ".gltf") {
+            if (modelPath.empty()) {
+                modelPath = entry.path();
             } else {
-                throw std::runtime_error(std::format("Directory {} has more than one obj file.", modelName));
+                throw std::runtime_error(std::format("Directory \"{}\" has more than one glTF file.", modelName));
             }
         }
     }
-    if (objPath.empty()) {
-        throw std::runtime_error(std::format("Directory {} has no obj file.", modelName));
+    if (modelPath.empty()) {
+        throw std::runtime_error(std::format("Directory \"{}\" has no glTF file.", modelName));
     }
 
-    tinyobj::attrib_t attrib;
-    std::vector<tinyobj::shape_t> shapes;
-    std::vector<tinyobj::material_t> materials;
-    std::string warn, err;
+    tinygltf::Model model;
+    tinygltf::TinyGLTF loader;
+    std::string err, warn;
+    bool ret = loader.LoadASCIIFromFile(&model, &err, &warn, modelPath.string());
 
-    bool success = tinyobj::LoadObj(
-        &attrib, &shapes, &materials,
-        &warn, &err,
-        objPath.c_str(), modelDir.c_str()
-    );
-
-    if (!success) {
-        throw std::runtime_error(warn + err);
+    if (!warn.empty()) {
+        std::println("glTF warning: {}", warn);
+    }
+    if (!err.empty()) {
+        std::println("glTF error: {}", err);
+    }
+    if (!ret) {
+        throw std::runtime_error(std::format("Failed to load glTF model \"{}\"", modelName));
     }
 
-    std::unordered_map<Vertex, uint32_t> uniqueVertices;
-    for (const auto& shape : shapes) {
-        for (const auto& index : shape.mesh.indices) {
-            Vertex vertex {
-                .pos {
-                    attrib.vertices[3 * index.vertex_index + 0],
-                    attrib.vertices[3 * index.vertex_index + 1],
-                    attrib.vertices[3 * index.vertex_index + 2]
-                },
-                .color {
-                    1.0f, 1.0f, 1.0f
-                },
-                .texCoord {
-                    attrib.texcoords[2 * index.texcoord_index + 0],
-                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-                },
-            };
-            minX = std::min(minX, attrib.vertices[3 * index.vertex_index + 0]);
-            maxX = std::max(maxX, attrib.vertices[3 * index.vertex_index + 0]);
-            minY = std::min(minY, attrib.vertices[3 * index.vertex_index + 1]);
-            maxY = std::max(maxY, attrib.vertices[3 * index.vertex_index + 1]);
-            minZ = std::min(minZ, attrib.vertices[3 * index.vertex_index + 2]);
-            maxZ = std::max(maxZ, attrib.vertices[3 * index.vertex_index + 2]);
 
-            if (!uniqueVertices.contains(vertex)) {
-                uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+    std::unordered_map<Vertex, uint32_t> uniqueVertices {};
+
+    for (const auto& mesh : model.meshes) {
+        for (const auto& primitive : mesh.primitives) {
+            // Get indices
+            const tinygltf::Accessor& indexAccessor = model.accessors[primitive.indices];
+            const tinygltf::BufferView& indexBufferView = model.bufferViews[indexAccessor.bufferView];
+            const tinygltf::Buffer& indexBuffer = model.buffers[indexBufferView.buffer];
+
+            // Get vertex positions
+            const tinygltf::Accessor& posAccessor = model.accessors[primitive.attributes.at("POSITION")];
+            const tinygltf::BufferView& posBufferView = model.bufferViews[posAccessor.bufferView];
+            const tinygltf::Buffer& posBuffer = model.buffers[posBufferView.buffer];
+
+            // Get texture coordinates if available
+            bool hasTexCoords = primitive.attributes.find("TEXCOORD_0") != primitive.attributes.end();
+            const tinygltf::Accessor* texCoordAccessor = nullptr;
+            const tinygltf::BufferView* texCoordBufferView = nullptr;
+            const tinygltf::Buffer* texCoordBuffer = nullptr;
+
+            if (hasTexCoords) {
+                texCoordAccessor = &model.accessors[primitive.attributes.at("TEXCOORD_0")];
+                texCoordBufferView = &model.bufferViews[texCoordAccessor->bufferView];
+                texCoordBuffer = &model.buffers[texCoordBufferView->buffer];
+            }
+
+            uint32_t baseVertex = static_cast<uint32_t>(vertices.size());
+
+            // Process vertices
+            for (size_t i = 0; i < posAccessor.count; i++) {
+                Vertex vertex{};
+
+                // Get position
+                const float* pos = reinterpret_cast<const float*>(&posBuffer.data[posBufferView.byteOffset + posAccessor.byteOffset + i * 12]);
+                vertex.pos = {pos[0], pos[1], pos[2]};
+                maxX = std::max(maxX, pos[0]);
+                minX = std::min(minX, pos[0]);
+                maxY = std::max(maxY, pos[1]);
+                minY = std::min(minY, pos[1]);
+                maxZ = std::max(maxZ, pos[2]);
+                minZ = std::min(minZ, pos[2]);
+
+                // Get texture coordinates if available
+                if (hasTexCoords) {
+                    const float* texCoord = reinterpret_cast<const float*>(&texCoordBuffer->data[texCoordBufferView->byteOffset + texCoordAccessor->byteOffset + i * 8]);
+                    vertex.texCoord = {texCoord[0], texCoord[1]};
+                } else {
+                    vertex.texCoord = {0.0f, 0.0f};
+                }
+
+                // Set default color
+                vertex.color = {1.0f, 1.0f, 1.0f};
+
                 vertices.emplace_back(vertex);
             }
-            indices.emplace_back(uniqueVertices[vertex]);
+
+            // Process indices
+            const unsigned char* indexData = &indexBuffer.data[indexBufferView.byteOffset + indexAccessor.byteOffset];
+            size_t indexCount = indexAccessor.count;
+            size_t indexStride = 0;
+
+            // Determine index stride based on component type
+            if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+                indexStride = sizeof(uint16_t);
+            } else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+                indexStride = sizeof(uint32_t);
+            } else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+                indexStride = sizeof(uint8_t);
+            } else {
+                throw std::runtime_error("Unsupported index component type");
+            }
+
+            indices.reserve(indices.size() + indexCount);
+
+            for (size_t i = 0; i < indexCount; ++i) {
+                uint32_t index = 0;
+
+                if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+                    index = *reinterpret_cast<const uint16_t*>(indexData + i * indexStride);
+                } else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+                    index = *reinterpret_cast<const uint32_t*>(indexData + i * indexStride);
+                } else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+                    index = *reinterpret_cast<const uint8_t*>(indexData + i * indexStride);
+                }
+
+                indices.emplace_back(baseVertex + index);
+            }
         }
+        std::println("vertices size: {}, indices size: {}", vertices.size(), indices.size());
     }
 }
 
@@ -1171,7 +1238,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) const {
         *pipelineLayout, 0, {*descriptorSets[currentFrame]}, {});
     graphicsCommandBuffers[currentFrame].drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
-    if (appInfo.profileSupported) {
+    if (appInfo.profileSupported || appInfo.dynamicRenderingSupported) {
         graphicsCommandBuffers[currentFrame].endRendering();
 
         transitionImageLayout(
@@ -1199,15 +1266,17 @@ void Application::updateUniformBuffer(uint32_t currentImage) const {
     glm::vec3 up {0, 1, 0};
 
     UniformBufferObject ubo {
-        .model = glm::rotate(
-            glm::translate(glm::mat4(1.0f), -objCenter),
-            time * glm::radians(45.0f),
-            glm::vec3(0.0f, 1.0f, 0.0f)
-        ),
+        .model =
+            glm::rotate(
+                glm::translate(glm::mat4(1.0f), -objCenter),
+                time * glm::radians(30.0f),
+                glm::vec3(0.0f, 1.0f, 0.0f)
+            ),
         .view = glm::lookAt(eye, glm::vec3(0.0f), up),
         .proj = glm::perspective(glm::radians(45.0f),
             static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
-            0.01f, static_cast<float>(glm::length(glm::vec3{xLen, yLen, zLen})) * 3
+            0.01f,
+            static_cast<float>(glm::length(glm::vec3{xLen, yLen, zLen})) * 3
         )
     };
     // GLM was designed for OpenGL
@@ -1693,6 +1762,33 @@ vk::raii::ImageView Application::createImageView(
     };
 
     return {device, viewInfo};
+}
+
+vk::raii::ImageView Application::createImageView(
+    VkImage image,
+    VkFormat format,
+    VkImageAspectFlags aspectFlags,
+    uint32_t mipLevels
+) const {
+    VkImageViewCreateInfo viewInfo {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = format,
+        .subresourceRange = {
+            .aspectMask = aspectFlags,
+            .baseMipLevel = 0,
+            .levelCount = mipLevels,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
+    VkImageView imageView;
+    if (vkCreateImageView(*device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create image view");
+    }
+
+    return {device, imageView};
 }
 
 std::unique_ptr<vk::raii::CommandBuffer> Application::beginSingleTimeCommands(const vk::raii::CommandPool& commandPool) const {

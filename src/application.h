@@ -12,9 +12,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include <stb_image.h>
-
-#include <tiny_obj_loader.h>
+#include <ktxvulkan.h>
 
 #include <limits>       // std::numeric_limits
 #include <vector>
@@ -44,13 +42,13 @@ private:
     AppInfo appInfo;
     std::filesystem::path appDir;
 
-    const std::string TEXTURE_PATH {"models/viking_room/textures/viking_room.png"};
-    tinyobj::real_t minX { std::numeric_limits<tinyobj::real_t>::max() };
-    tinyobj::real_t maxX { std::numeric_limits<tinyobj::real_t>::min() };
-    tinyobj::real_t minY { minX };
-    tinyobj::real_t maxY { maxX };
-    tinyobj::real_t minZ { minX };
-    tinyobj::real_t maxZ { maxX };
+    const std::string TEXTURE_PATH {"models/viking_room/textures/viking_room.ktx2"};
+    float minX { std::numeric_limits<float>::max() };
+    float maxX { std::numeric_limits<float>::min() };
+    float minY { minX };
+    float maxY { maxX };
+    float minZ { minX };
+    float maxZ { maxX };
 
     GLFWwindow*                                 window { nullptr };
     vk::raii::Context                           context {};
@@ -90,13 +88,14 @@ private:
     vk::raii::ImageView     depthImageView { nullptr };
 
     uint32_t                mipLevels {0};
-    vk::raii::Image         textureImage { nullptr };
-    vk::raii::DeviceMemory  textureImageMemory { nullptr };
+    ktxVulkanTexture        texture;
+    // vk::raii::Image         textureImage { nullptr };
+    // vk::raii::DeviceMemory  textureImageMemory { nullptr };
     vk::raii::ImageView     textureImageView { nullptr };
     vk::raii::Sampler       textureSampler { nullptr };
 
-    std::vector<Vertex>     vertices;
-    std::vector<uint32_t>   indices;
+    std::vector<Vertex>     vertices {};
+    std::vector<uint32_t>   indices {};
     vk::raii::Buffer        vertexBuffer { nullptr };
     vk::raii::DeviceMemory  vertexBufferMemory { nullptr };
     vk::raii::Buffer        indexBuffer { nullptr };
@@ -233,6 +232,14 @@ private:
         const vk::raii::Image& image,
         vk::Format format,
         vk::ImageAspectFlags aspectFlags,
+        uint32_t mipLevels
+    ) const;
+
+    [[nodiscard]]
+    vk::raii::ImageView createImageView(
+        VkImage image,
+        VkFormat format,
+        VkImageAspectFlags aspectFlags,
         uint32_t mipLevels
     ) const;
 

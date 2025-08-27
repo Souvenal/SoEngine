@@ -46,6 +46,7 @@ build/*.obj
 # CMake
 build
 target
+CMakeUserPresets.json
 
 .cache
 .idea

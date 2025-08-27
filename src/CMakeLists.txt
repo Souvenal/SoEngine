@@ -2,29 +2,33 @@ file(GLOB_RECURSE ALL_INCLUDE CONFIGURE_DEPENDS "*.h")
 file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS "*.cpp")
 
 target_sources(${TARGET} PUBLIC ${ALL_INCLUDE} ${ALL_SOURCES})
-target_include_directories(${TARGET} PRIVATE ${PROJECT_SOURCE_DIR}/ext)
-target_link_libraries(${TARGET} PRIVATE stb)
-target_link_libraries(${TARGET} PRIVATE tinyobjloader)
 
 target_compile_features(${TARGET} PRIVATE cxx_std_23)
+# target_compile_options(${TARGET} PRIVATE
+#     -Wall
+#     -fsanitize=address
+# )
+# target_link_options(${TARGET} PRIVATE
+#     -fsanitize=address
+# )
 
-find_package(glfw3 REQUIRED)
-if (glfw3_FOUND)
-#     target_include_directories(${TARGET} PRIVATE ${GLFW_INCLUDE_DIRS})
-    target_link_libraries(${TARGET} PRIVATE glfw)
-else()
-    message(FATAL_ERROR "GLFW not found")
-endif()
+find_package(glfw3 CONFIG REQUIRED)
+target_link_libraries(${TARGET} PRIVATE glfw)
 
-find_package(glm REQUIRED)
-if (glm_FOUND)
-    # target_include_directories(${TARGET} PRIVATE ${GLM_INCLUDE_DIRS})
-    target_link_libraries(${TARGET} PRIVATE glm::glm)
-else()
-    message(FATAL_ERROR "GLM not found")
-endif()
+find_package(glm CONFIG REQUIRED)
+target_link_libraries(${TARGET} PRIVATE glm::glm)
+
+find_package(Stb REQUIRED)
+target_include_directories(${TARGET} PRIVATE ${Stb_INCLUDE_DIR})
+
+find_path(TINYGLTF_INCLUDE_DIRS "tiny_gltf.h")
+target_include_directories(${TARGET} PRIVATE ${TINYGLTF_INCLUDE_DIRS})
+
+find_package(Ktx CONFIG REQUIRED)
+target_link_libraries(${TARGET} PRIVATE KTX::ktx)
 
 find_package (Vulkan REQUIRED)
+# target_link_libraries(${TARGET} PRIVATE Vulkan::Vulkan)
 # set up Vulkan C++ module
 add_library(VulkanCppModule)
 add_library(Vulkan::cppm ALIAS VulkanCppModule)
