@@ -3,9 +3,7 @@
 #include <vulkan/vulkan_profiles.hpp>
 #include <print>
 
-constexpr uint32_t WIDTH {800};
-constexpr uint32_t HEIGHT {600};
-constexpr size_t MAX_FRAMES_IN_FLIGHT { 3 };
+constexpr size_t MAX_FRAMES_IN_FLIGHT { 2 };
 constexpr size_t MAX_OBJECTS { 3 };
 
 struct AppInfo {

@@ -1,4 +1,4 @@
-#include "application.h"
+#include "so_engine.h"
 
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -38,34 +38,18 @@ static std::vector<char> readFile(const std::string& filename) {
     return buffer;
 }
 
-Application::Application(const std::filesystem::path& path): appDir(path) {}
+SoEngine::SoEngine(const std::filesystem::path& path): appDir(path) {}
 
-void Application::run() {
-    initWindow();
-    initVulkan();
-    mainLoop();
-    cleanup();
-}
-
-void Application::initWindow() {
-    glfwInit();
-
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-
-    window = glfwCreateWindow(static_cast<int>(WIDTH), static_cast<int>(HEIGHT), "Vulkan", nullptr, nullptr);
-    glfwSetWindowUserPointer(window, this);
-    glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
-}
-
-void Application::initVulkan() {
+void SoEngine::prepare(const Window* window) {
     createInstance();
     setupDebugMessenger();
-    createSurface();        // influence physical device selection
+    surface = window->createSurface(*instance);        // influence physical device selection
     pickPhysicalDevice();
     checkFeatureSupport();
     // detectFeatureSupport();
     createLogicalDevice();
     createSwapChain();
+    std::println("Number of images in the swap chain: {}", swapChainImages.size());
     createImageViews();
 
     if (!appInfo.profileSupported && !appInfo.dynamicRenderingSupported) {
@@ -101,16 +85,35 @@ void Application::initVulkan() {
     // appInfo.printFeatureSupportSummary();
 }
 
-void Application::mainLoop() {
-    while(!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
-        drawFrame();
-    }
+void SoEngine::update(float deltaTime) {
+    // while(!glfwWindowShouldClose(window)) {
+    //     glfwPollEvents();
+    //     drawFrame();
+    // }
 
-    device.waitIdle();
+    // device.waitIdle();
+    drawFrame();
 }
 
-void Application::cleanup() {
+bool SoEngine::shouldTerminate() const {
+    return false;
+}
+
+void SoEngine::terminate() {
+    device.waitIdle();
+
+    cleanup();
+}
+
+void SoEngine::inputEvent(const InputEvent& event) {
+    if (event.getSource() == EventSource::Mouse) {
+        const auto& mouseButton = static_cast<const MouseButtonInputEvent&>(event);
+    } else if (event.getSource() == EventSource::Keyboard) {
+        const auto& keyEvent = static_cast<const KeyInputEvent&>(event);
+    }
+}
+
+void SoEngine::cleanup() {
     ktxVulkanTexture_Destruct(&texture, *device, nullptr);
 
     cleanupSwapChain();
@@ -119,16 +122,16 @@ void Application::cleanup() {
     glfwTerminate();
 }
 
-void Application::cleanupSwapChain() {
+void SoEngine::cleanupSwapChain() {
     swapChainImageViews.clear();
     swapChain = nullptr;
 }
 
-void Application::createInstance() {
+void SoEngine::createInstance() {
     constexpr vk::ApplicationInfo appInfo {
-        .pApplicationName = "Hello Triangle",
+        .pApplicationName = "Vulkan application",
         .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-        .pEngineName = "No Engine",
+        .pEngineName = "So Engine",
         .engineVersion = VK_MAKE_VERSION(1, 0, 0),
         .apiVersion = vk::ApiVersion14
     };
@@ -151,7 +154,7 @@ void Application::createInstance() {
     instance = std::make_unique<vk::raii::Instance>(context, createInfo);
 }
 
-void Application::setupDebugMessenger() {
+void SoEngine::setupDebugMessenger() {
     // Only used if validation layers are enabled via vkconfig
     vk::DebugUtilsMessageSeverityFlagsEXT severityFlags {
         vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
@@ -175,15 +178,7 @@ void Application::setupDebugMessenger() {
     }
 }
 
-void Application::createSurface() {
-    VkSurfaceKHR _surface;
-    if (glfwCreateWindowSurface(**instance, window, nullptr, &_surface) != 0) {
-        throw std::runtime_error("Failed to create window surface!");
-    }
-    surface = vk::raii::SurfaceKHR(*instance, _surface);
-}
-
-void Application::pickPhysicalDevice() {
+void SoEngine::pickPhysicalDevice() {
     auto devices = instance->enumeratePhysicalDevices();
     if (devices.empty()) {
         throw std::runtime_error("Failed to GPUs with Vulkan support!");
@@ -203,10 +198,9 @@ void Application::pickPhysicalDevice() {
     
     physicalDevice = std::make_unique<vk::raii::PhysicalDevice>(candidates.rbegin()->second);
     msaaSamples = getMaxUsableSampleCount();
-    std::println("Physical GPU score: {}", candidates.rbegin()->first);
 }
 
-void Application::checkFeatureSupport() {
+void SoEngine::checkFeatureSupport() {
     appInfo.profile = {
         VP_KHR_ROADMAP_2022_NAME,
         VP_KHR_ROADMAP_2022_SPEC_VERSION
@@ -231,7 +225,7 @@ void Application::checkFeatureSupport() {
     }
 }
 
-void Application::detectFeatureSupport() {
+void SoEngine::detectFeatureSupport() {
     auto deviceProperties = physicalDevice->getProperties();
     auto availableExtensions = physicalDevice->enumerateDeviceExtensionProperties();
 
@@ -282,7 +276,7 @@ void Application::detectFeatureSupport() {
     }
 }
 
-void Application::createLogicalDevice() {
+void SoEngine::createLogicalDevice() {
     const auto queueFamilyProperties = physicalDevice->getQueueFamilyProperties();
     const auto indices = findQueueFamilies(*physicalDevice);
     graphicsIndex = indices.graphicsFamily.value();
@@ -328,7 +322,7 @@ void Application::createLogicalDevice() {
     transferQueue = vk::raii::Queue(device, transferIndex, 0);
 }
 
-void Application::createSwapChain() {
+void SoEngine::createSwapChain() {
     auto surfaceCapabilities = physicalDevice->getSurfaceCapabilitiesKHR(*surface);
     swapChainImageFormat = chooseSwapSurfaceFormat(
         physicalDevice->getSurfaceFormatsKHR(*surface)
@@ -371,11 +365,9 @@ void Application::createSwapChain() {
 
     swapChain = vk::raii::SwapchainKHR(device, createInfo);
     swapChainImages = swapChain.getImages();
-
-    std::println("Number of images in the swap chain: {}", swapChainImages.size());
 }
 
-void Application::createImageViews() {
+void SoEngine::createImageViews() {
     vk::ImageViewCreateInfo imageViewCreateInfo{
         .viewType = vk::ImageViewType::e2D,
         .format = swapChainImageFormat,
@@ -393,7 +385,7 @@ void Application::createImageViews() {
     }
 }
 
-void Application::createRenderPass() {
+void SoEngine::createRenderPass() {
     if (appInfo.profileSupported) {
         std::println("Using dynamic rendering, skipping render pass creation.");
         return;
@@ -489,7 +481,7 @@ void Application::createRenderPass() {
     renderPass = vk::raii::RenderPass{device, renderPassInfo};
 }
 
-void Application::createFramebuffers() {
+void SoEngine::createFramebuffers() {
     if (appInfo.profileSupported) {
         // No framebuffers needed with dynamic rendering
         std::println("Using dynamic rendering, skipping framebuffer creation.");
@@ -519,7 +511,7 @@ void Application::createFramebuffers() {
     }
 }
 
-void Application::createDescriptorSetLayout() {
+void SoEngine::createDescriptorSetLayout() {
     vk::DescriptorSetLayoutBinding uboLayoutBinding {
         0,
         vk::DescriptorType::eUniformBuffer,
@@ -547,7 +539,7 @@ void Application::createDescriptorSetLayout() {
     descriptorSetLayout = vk::raii::DescriptorSetLayout{device, layoutInfo};
 }
 
-void Application::createGraphicsPipeline() {
+void SoEngine::createGraphicsPipeline() {
     auto shadersDir = appDir / "shaders";
 
     std::string shaderPath = (shadersDir / "slang.spv").string();
@@ -740,7 +732,7 @@ void Application::createGraphicsPipeline() {
     graphicsPipeline = vk::raii::Pipeline{device, nullptr, pipelineInfo};
 }
 
-void Application::createCommandPool() {
+void SoEngine::createCommandPool() {
     vk::CommandPoolCreateInfo graphicsCommandPoolInfo {
         .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
         .queueFamilyIndex = graphicsIndex
@@ -753,7 +745,7 @@ void Application::createCommandPool() {
     transferCommandPool = vk::raii::CommandPool{device, transferCommandPoolInfo};
 }
 
-void Application::createColorResources() {
+void SoEngine::createColorResources() {
     vk::Format colorFormat = swapChainImageFormat;
 
     createImage(
@@ -769,7 +761,7 @@ void Application::createColorResources() {
     );
 }
 
-void Application::createDepthResources() {
+void SoEngine::createDepthResources() {
     vk::Format depthFormat = findDepthFormat();
 
     createImage(swapChainExtent.width, swapChainExtent.height,
@@ -782,7 +774,7 @@ void Application::createDepthResources() {
     depthImageView = createImageView(depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
 }
 
-void Application::createTextureImage() {
+void SoEngine::createTextureImage() {
     // Load KTX2 texture
     ktxVulkanDeviceInfo* vdi = ktxVulkanDeviceInfo_Create(
         **physicalDevice, *device,
@@ -825,11 +817,11 @@ void Application::createTextureImage() {
     ktxVulkanDeviceInfo_Destroy(vdi);
 }
 
-void Application::createTextureImageView() {
+void SoEngine::createTextureImageView() {
     textureImageView = createImageView(texture.image, texture.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
 }
 
-void Application::createTextureSampler() {
+void SoEngine::createTextureSampler() {
     vk::PhysicalDeviceProperties properties = physicalDevice->getProperties();
     vk::SamplerCreateInfo samplerInfo {
         .magFilter = vk::Filter::eLinear,
@@ -851,7 +843,7 @@ void Application::createTextureSampler() {
     textureSampler = vk::raii::Sampler {device, samplerInfo};
 }
 
-void Application::loadModel(const std::string& modelName) {
+void SoEngine::loadModel(const std::string& modelName) {
     std::filesystem::path modelDir {appDir / "models" / modelName};
     std::filesystem::path modelPath {};
     for (const auto& entry : std::filesystem::directory_iterator(modelDir)) {
@@ -975,7 +967,7 @@ void Application::loadModel(const std::string& modelName) {
     }
 }
 
-void Application::setupModelObjects() {
+void SoEngine::setupModelObjects() {
     // Object 1 - Center
     modelObjects[0].position = {0.0f, 0.0f, 0.0f};
     modelObjects[0].rotation = {0.0f, 0.0f, 0.0f};
@@ -992,7 +984,7 @@ void Application::setupModelObjects() {
     modelObjects[2].scale = {0.75f, 0.75f, 0.75f};
 }
 
-void Application::createVertexBuffer() {
+void SoEngine::createVertexBuffer() {
     const vk::DeviceSize bufferSize = sizeof(Vertex) * vertices.size();
 
     vk::raii::Buffer stagingBuffer {nullptr};
@@ -1017,7 +1009,7 @@ void Application::createVertexBuffer() {
     copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
 }
 
-void Application::createIndexBuffer() {
+void SoEngine::createIndexBuffer() {
     const vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
     vk::raii::Buffer stagingBuffer {nullptr};
@@ -1040,7 +1032,7 @@ void Application::createIndexBuffer() {
     copyBuffer(stagingBuffer, indexBuffer, bufferSize);
 }
 
-void Application::createUniformBuffers() {
+void SoEngine::createUniformBuffers() {
     // For each model object
     for (auto& object : modelObjects) {
         object.uniformBuffers.clear();
@@ -1062,7 +1054,7 @@ void Application::createUniformBuffers() {
     }
 }
 
-void Application::createDescriptorPool() {
+void SoEngine::createDescriptorPool() {
     std::array poolSizes {
         vk::DescriptorPoolSize{
             .type = vk::DescriptorType::eUniformBuffer,
@@ -1084,7 +1076,7 @@ void Application::createDescriptorPool() {
     descriptorPool = vk::raii::DescriptorPool{device, poolInfo};
 }
 
-void Application::createDescriptorSets() {
+void SoEngine::createDescriptorSets() {
     // For each model object
     for (auto& object : modelObjects) {
         // Create descriptor sets for each frame in flight
@@ -1134,7 +1126,7 @@ void Application::createDescriptorSets() {
     }
 }
 
-void Application::createCommandBuffers() {
+void SoEngine::createCommandBuffers() {
     graphicsCommandBuffers.clear();
     vk::CommandBufferAllocateInfo allocInfo {
         .commandPool = graphicsCommandPool,
@@ -1145,7 +1137,7 @@ void Application::createCommandBuffers() {
     graphicsCommandBuffers = vk::raii::CommandBuffers(device, allocInfo);
 }
 
-void Application::createSyncObjects() {
+void SoEngine::createSyncObjects() {
     presentCompleteSemaphores.clear();
     renderFinishedSemaphores.clear();
     inFlightFences.clear();
@@ -1157,7 +1149,7 @@ void Application::createSyncObjects() {
     }
 }
 
-void Application::recordCommandBuffer(uint32_t imageIndex) const {
+void SoEngine::recordCommandBuffer(uint32_t imageIndex) const {
     graphicsCommandBuffers[currentFrame].begin({});
 
     vk::ClearValue clearColor = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
@@ -1282,7 +1274,7 @@ void Application::recordCommandBuffer(uint32_t imageIndex) const {
     graphicsCommandBuffers[currentFrame].end();
 }
 
-void Application::updateUniformBuffer(uint32_t currentImage) {
+void SoEngine::updateUniformBuffer(uint32_t currentImage) {
     static auto startTime = std::chrono::high_resolution_clock::now();
 
     const auto currentTime = std::chrono::high_resolution_clock::now();
@@ -1305,7 +1297,6 @@ void Application::updateUniformBuffer(uint32_t currentImage) {
     // Update uniform buffers for each object
     for (auto& object : modelObjects) {
         glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), time * glm::radians(30.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-
         glm::mat4 model = object.getModelMatrix() * rotation;
 
         UniformBufferObject ubo {
@@ -1318,15 +1309,14 @@ void Application::updateUniformBuffer(uint32_t currentImage) {
     }
 }
 
-void Application::drawFrame() {
+void SoEngine::drawFrame() {
     while (vk::Result::eTimeout == device.waitForFences(*inFlightFences[currentFrame], vk::True, UINT64_MAX))
         ;
     // Acquire an image from the swap chain
     auto [result, imageIndex] = swapChain.acquireNextImage(
         UINT64_MAX, presentCompleteSemaphores[currentFrame], nullptr);
     if (result == vk::Result::eErrorOutOfDateKHR) {
-        framebufferResized = false;
-        recreateSwapChain();
+        swapChainOutOfDate = true;
         return;
     } else if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
         throw std::runtime_error("Failed to acquire swap chain image!");
@@ -1368,9 +1358,7 @@ void Application::drawFrame() {
     };
     result = presentQueue.presentKHR(presentInfo);
     if (result == vk::Result::eErrorOutOfDateKHR ||
-        result == vk::Result::eSuboptimalKHR ||
-        framebufferResized) {
-        framebufferResized = false;
+        result == vk::Result::eSuboptimalKHR) {
         recreateSwapChain();
     } else if (result != vk::Result::eSuccess) {
         throw std::runtime_error("Failed to present swap chain image!");
@@ -1379,16 +1367,8 @@ void Application::drawFrame() {
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void Application::recreateSwapChain() {
-    int width = 0, height = 0;
-    glfwGetFramebufferSize(window, &width, &height);
-    while (width == 0 || height == 0) {
-        glfwGetFramebufferSize(window, &width, &height);
-        glfwWaitEvents();
-    };
-
+void SoEngine::recreateSwapChain() {
     device.waitIdle();
-
     cleanupSwapChain();
 
     createSwapChain();
@@ -1402,13 +1382,7 @@ void Application::recreateSwapChain() {
 /**
  * Helper functions
  */
-void Application::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-    // std::println("resize callback");
-    auto app = static_cast<Application*>(glfwGetWindowUserPointer(window));
-    app->framebufferResized = true;
-}
-
-bool Application::isDeviceSuitable(const vk::raii::PhysicalDevice& device) {
+bool SoEngine::isDeviceSuitable(const vk::raii::PhysicalDevice& device) {
     auto availableExtensions {device.enumerateDeviceExtensionProperties()};
     auto deviceProperties {device.getProperties()};
     auto deviceFeatures {device.getFeatures()};
@@ -1443,13 +1417,13 @@ bool Application::isDeviceSuitable(const vk::raii::PhysicalDevice& device) {
         deviceFeatures.samplerAnisotropy;
 }
 
-std::vector<const char*> Application::getRequiredLayers() const {
+std::vector<const char*> SoEngine::getRequiredLayers() const {
     std::vector<const char*> requiredLayers {};
     checkLayerSupport(requiredLayers);
     return requiredLayers;
 }
 
-void Application::checkLayerSupport(const std::vector<const char*>& requiredLayers) const {
+void SoEngine::checkLayerSupport(const std::vector<const char*>& requiredLayers) const {
     const auto layerProperties = context.enumerateInstanceLayerProperties();
     if (std::ranges::any_of(requiredLayers, [&layerProperties](const auto& requiredLayer) {
         return std::ranges::none_of(layerProperties, [&requiredLayer](const auto& layerProperty) {
@@ -1460,7 +1434,7 @@ void Application::checkLayerSupport(const std::vector<const char*>& requiredLaye
     }
 }
 
-std::vector<const char*> Application::getRequiredExtensions() const {
+std::vector<const char*> SoEngine::getRequiredExtensions() const {
     uint32_t glfwExtensionCount = 0;
     const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
     std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
@@ -1489,7 +1463,7 @@ std::vector<const char*> Application::getRequiredExtensions() const {
     return extensions;
 }
 
-void Application::checkExtensionSupport(const std::vector<const char*>& requiredExtensions) const {
+void SoEngine::checkExtensionSupport(const std::vector<const char*>& requiredExtensions) const {
     auto extensionProperties = context.enumerateInstanceExtensionProperties();
 
     // check
@@ -1503,7 +1477,7 @@ void Application::checkExtensionSupport(const std::vector<const char*>& required
     }
 }
 
-uint32_t Application::rateDeviceSuitability(const vk::raii::PhysicalDevice& device) {
+uint32_t SoEngine::rateDeviceSuitability(const vk::raii::PhysicalDevice& device) {
     if (!isDeviceSuitable(device)) {
         return 0;
     }
@@ -1521,7 +1495,7 @@ uint32_t Application::rateDeviceSuitability(const vk::raii::PhysicalDevice& devi
     return score;
 }
 
-QueueFamilyIndices Application::findQueueFamilies(const vk::raii::PhysicalDevice& physicalDevice) const {
+QueueFamilyIndices SoEngine::findQueueFamilies(const vk::raii::PhysicalDevice& physicalDevice) const {
     QueueFamilyIndices indices;
     const auto queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
 
@@ -1571,7 +1545,7 @@ QueueFamilyIndices Application::findQueueFamilies(const vk::raii::PhysicalDevice
     return indices;
 }
 
-uint32_t Application::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const {
+uint32_t SoEngine::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const {
     vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice->getMemoryProperties();
 
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
@@ -1584,7 +1558,7 @@ uint32_t Application::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlag
     throw std::runtime_error("Failed to find suitable memory type!");
 }
 
-vk::Format Application::findSupportedFormat(
+vk::Format SoEngine::findSupportedFormat(
     const std::vector<vk::Format>& candidates,
     vk::ImageTiling tiling,
     vk::FormatFeatureFlags features
@@ -1602,7 +1576,7 @@ vk::Format Application::findSupportedFormat(
     throw std::runtime_error("Failed to find supported format!");
 }
 
-vk::Format Application::findDepthFormat() const {
+vk::Format SoEngine::findDepthFormat() const {
     return findSupportedFormat(
         { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint},
         vk::ImageTiling::eOptimal,
@@ -1610,7 +1584,7 @@ vk::Format Application::findDepthFormat() const {
     );
 }
 
-vk::SampleCountFlagBits Application::getMaxUsableSampleCount() const {
+vk::SampleCountFlagBits SoEngine::getMaxUsableSampleCount() const {
     vk::PhysicalDeviceProperties physicalDeviceProperties = physicalDevice->getProperties();
 
     vk::SampleCountFlags counts {
@@ -1642,7 +1616,7 @@ vk::SampleCountFlagBits Application::getMaxUsableSampleCount() const {
     }
 }
 
-vk::Format Application::chooseSwapSurfaceFormat(
+vk::Format SoEngine::chooseSwapSurfaceFormat(
     const std::vector<vk::SurfaceFormatKHR>& availableFormats) const noexcept{
     for (const auto& availableFormat : availableFormats) {
         if (availableFormat.format == vk::Format::eB8G8R8A8Srgb &&
@@ -1656,7 +1630,7 @@ vk::Format Application::chooseSwapSurfaceFormat(
         vk::Format::eB8G8R8A8Unorm : availableFormats[0].format;
 }
 
-vk::PresentModeKHR Application::chooseSwapPresentMode(
+vk::PresentModeKHR SoEngine::chooseSwapPresentMode(
     const std::vector<vk::PresentModeKHR>& availablePresentModes
 ) const noexcept{
     for (const auto& availablePresentMode : availablePresentModes) {
@@ -1669,7 +1643,7 @@ vk::PresentModeKHR Application::chooseSwapPresentMode(
     return vk::PresentModeKHR::eFifo;
 }
 
-vk::Extent2D Application::chooseSwapExtent(
+vk::Extent2D SoEngine::chooseSwapExtent(
     const vk::SurfaceCapabilitiesKHR& capabilities) const noexcept{
     if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
         return capabilities.currentExtent;
@@ -1684,7 +1658,7 @@ vk::Extent2D Application::chooseSwapExtent(
     }
 }
 
-vk::raii::ShaderModule Application::createShaderModule(const std::vector<char>& code) const{
+vk::raii::ShaderModule SoEngine::createShaderModule(const std::vector<char>& code) const{
     vk::ShaderModuleCreateInfo createInfo {
         .codeSize = code.size() * sizeof(char),
         .pCode = reinterpret_cast<const uint32_t*>(code.data())
@@ -1694,7 +1668,7 @@ vk::raii::ShaderModule Application::createShaderModule(const std::vector<char>& 
 }
 
 
-void Application::createBuffer(
+void SoEngine::createBuffer(
     vk::DeviceSize size,
     vk::BufferUsageFlags usage,
     vk::MemoryPropertyFlags properties,
@@ -1731,7 +1705,7 @@ void Application::createBuffer(
     buffer.bindMemory(bufferMemory, 0);
 }
 
-void Application::createImage(
+void SoEngine::createImage(
     uint32_t width,
     uint32_t height,
     uint32_t mipLevels,
@@ -1774,7 +1748,7 @@ void Application::createImage(
     image.bindMemory(*imageMemory, 0);
 }
 
-vk::raii::ImageView Application::createImageView(
+vk::raii::ImageView SoEngine::createImageView(
     const vk::raii::Image& image,
     vk::Format format,
     vk::ImageAspectFlags aspectFlags,
@@ -1796,7 +1770,7 @@ vk::raii::ImageView Application::createImageView(
     return {device, viewInfo};
 }
 
-vk::raii::ImageView Application::createImageView(
+vk::raii::ImageView SoEngine::createImageView(
     VkImage image,
     VkFormat format,
     VkImageAspectFlags aspectFlags,
@@ -1823,7 +1797,7 @@ vk::raii::ImageView Application::createImageView(
     return {device, imageView};
 }
 
-std::unique_ptr<vk::raii::CommandBuffer> Application::beginSingleTimeCommands(const vk::raii::CommandPool& commandPool) const {
+std::unique_ptr<vk::raii::CommandBuffer> SoEngine::beginSingleTimeCommands(const vk::raii::CommandPool& commandPool) const {
     vk::CommandBufferAllocateInfo allocInfo {
         .commandPool = commandPool,
         .level = vk::CommandBufferLevel::ePrimary,
@@ -1836,7 +1810,7 @@ std::unique_ptr<vk::raii::CommandBuffer> Application::beginSingleTimeCommands(co
     return commandBuffer;
 }
 
-void Application::endSingleTimeCommands(
+void SoEngine::endSingleTimeCommands(
     const vk::raii::CommandBuffer& commandBuffer,
     const vk::raii::Queue& queue
 ) const {
@@ -1846,7 +1820,7 @@ void Application::endSingleTimeCommands(
     queue.waitIdle();
 }
 
-void Application::copyBuffer(
+void SoEngine::copyBuffer(
     const vk::raii::Buffer& srcBuffer,
     const vk::raii::Buffer& dstBuffer,
     vk::DeviceSize size
@@ -1856,7 +1830,7 @@ void Application::copyBuffer(
     endSingleTimeCommands(*commandCopyBuffer, transferQueue);
 }
 
-void Application::transitionImageLayout(
+void SoEngine::transitionImageLayout(
     const vk::raii::Image& image,
     // vk::Format format,
     vk::ImageLayout oldLayout,
@@ -1923,7 +1897,7 @@ void Application::transitionImageLayout(
     }
 }
 
-void Application::transitionImageLayout(
+void SoEngine::transitionImageLayout(
     const vk::Image& image,
     // vk::Format format,
     vk::ImageLayout oldLayout,
@@ -1990,7 +1964,7 @@ void Application::transitionImageLayout(
     }
 }
 
-void Application::transitionImageLayout(
+void SoEngine::transitionImageLayout(
     const vk::raii::Image& image,
     vk::ImageLayout oldLayout,
     vk::ImageLayout newLayout,
@@ -2030,7 +2004,7 @@ void Application::transitionImageLayout(
     endSingleTimeCommands(*commandBuffer, transferQueue);
 }
 
-void Application::transitionImageLayout(
+void SoEngine::transitionImageLayout(
     const vk::Image& image,
     vk::ImageLayout oldLayout,
     vk::ImageLayout newLayout,
@@ -2070,7 +2044,7 @@ void Application::transitionImageLayout(
 }
 
 
-void Application::copyBufferToImage(
+void SoEngine::copyBufferToImage(
     const vk::raii::Buffer& buffer,
     const vk::raii::Image& image,
     uint32_t width,
@@ -2100,7 +2074,7 @@ void Application::copyBufferToImage(
     endSingleTimeCommands(*commandBuffer, transferQueue);
 }
 
-void Application::generateMipmaps(
+void SoEngine::generateMipmaps(
     const vk::raii::Image& image,
     vk::Format imageFormat,
     int32_t texWidth,

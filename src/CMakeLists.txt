@@ -1,7 +1,8 @@
-file(GLOB_RECURSE ALL_INCLUDE CONFIGURE_DEPENDS "*.h" "*.hpp")
+file(GLOB_RECURSE ALL_INCLUDES CONFIGURE_DEPENDS "*.h" "*.hpp")
 file(GLOB_RECURSE ALL_SOURCES CONFIGURE_DEPENDS "*.cpp")
 
-target_sources(${TARGET} PUBLIC ${ALL_INCLUDE} ${ALL_SOURCES})
+target_include_directories(${TARGET} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_sources(${TARGET} PUBLIC ${ALL_INCLUDES} ${ALL_SOURCES})
 
 target_compile_features(${TARGET} PRIVATE cxx_std_23)
 # target_compile_options(${TARGET} PRIVATE

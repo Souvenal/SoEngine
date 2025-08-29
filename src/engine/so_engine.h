@@ -1,8 +1,10 @@
 #pragma once
 
+#include "window/window.h"
+#include "window/input_events.h"
 #include "config.h"
 #include "vertex.h"
-#include "modelObject.hpp"
+#include "model_object.hpp"
 #include "descriptor.h"
 
 #define GLFW_INCLUDE_VULKAN
@@ -33,11 +35,34 @@ struct QueueFamilyIndices {
     }
 };
 
-class Application {
-public:
-    explicit Application(const std::filesystem::path& path);
+struct FrameData {
+    vk::raii::Semaphore swapchainSemaphore { nullptr };
+    vk::raii::Fence renderFence { nullptr };
 
-    void run();
+    vk::raii::CommandBuffer commandBuffer { nullptr };
+};
+
+class SoEngine {
+public:
+    explicit SoEngine(const std::filesystem::path& path);
+
+    void prepare(const Window* window);
+
+    void update(float deltaTime);
+
+    [[nodiscard]] bool shouldTerminate() const;
+
+    void terminate();
+
+    [[nodiscard]] bool isSwapChainOutOfDate() const;
+
+    /**
+     * @brief Recreates the swap chain
+     * @note Should be called when the swap chain becomes outdated (e.g., due to window resizing)
+     */
+    void recreateSwapChain();
+
+    void inputEvent(const InputEvent& event);
 
 private:
     AppInfo appInfo;
@@ -66,7 +91,7 @@ private:
     std::vector<vk::raii::ImageView>    swapChainImageViews;
     vk::Format                          swapChainImageFormat {};
     vk::Extent2D                        swapChainExtent;
-    bool                                framebufferResized {false};;
+    bool                                swapChainOutOfDate {false};
 
     // Traditional render pass (fallback for non-dynamic rendering)
     vk::raii::RenderPass                renderPass { nullptr };
@@ -147,7 +172,6 @@ private:
     void createLogicalDevice();
 
     void createSwapChain();
-    void recreateSwapChain();
     void createImageViews();
 
     void createDescriptorSetLayout();
