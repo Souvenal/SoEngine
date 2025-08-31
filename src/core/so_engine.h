@@ -1,19 +1,14 @@
 #pragma once
 
+#include "utils/deletion_queue.h"
 #include "window/window.h"
 #include "window/input_events.h"
+#include "resource/model_object.h"
 #include "config.h"
-#include "vertex.h"
-#include "model_object.hpp"
+#include "types.h"
 #include "descriptor.h"
-
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
+#include "images.h"
+#include "frame_data.h"
 
 #include <ktxvulkan.h>
 
@@ -33,13 +28,6 @@ struct QueueFamilyIndices {
             presentFamily.has_value() &&
             transferFamily.has_value();
     }
-};
-
-struct FrameData {
-    vk::raii::Semaphore swapchainSemaphore { nullptr };
-    vk::raii::Fence renderFence { nullptr };
-
-    vk::raii::CommandBuffer commandBuffer { nullptr };
 };
 
 class SoEngine {
@@ -64,11 +52,15 @@ public:
 
     void inputEvent(const InputEvent& event);
 
+    FrameData& getCurrentFrame();
+
 private:
     AppInfo appInfo;
     std::filesystem::path appDir;
 
-    GLFWwindow*                                 window { nullptr };
+    DeletionQueue       mainDeletionQueue;
+    DeletionQueue       resourceDeletionQueue;
+
     vk::raii::Context                           context {};
     std::unique_ptr<vk::raii::Instance>         instance;
     vk::raii::SurfaceKHR                        surface { nullptr };
@@ -77,6 +69,9 @@ private:
 
     std::unique_ptr<vk::raii::PhysicalDevice>   physicalDevice {};
     vk::raii::Device                            device { nullptr };
+
+    VmaAllocator                                allocator { nullptr };
+
     uint32_t        graphicsIndex {};
     uint32_t        presentIndex {};
     uint32_t        transferIndex {};
@@ -97,13 +92,15 @@ private:
     vk::raii::RenderPass                renderPass { nullptr };
     std::vector<vk::raii::Framebuffer>  swapChainFramebuffers;
 
-    vk::raii::Image                 colorImage { nullptr };
-    vk::raii::DeviceMemory          colorImageMemory { nullptr };
-    vk::raii::ImageView             colorImageView { nullptr };
+    // vk::raii::Image                 colorImage { nullptr };
+    // vk::raii::DeviceMemory          colorImageMemory { nullptr };
+    // vk::raii::ImageView             colorImageView { nullptr };
 
-    vk::raii::Image         depthImage { nullptr };
-    vk::raii::DeviceMemory  depthImageMemory { nullptr };
-    vk::raii::ImageView     depthImageView { nullptr };
+    // vk::raii::Image         depthImage { nullptr };
+    // vk::raii::DeviceMemory  depthImageMemory { nullptr };
+    // vk::raii::ImageView     depthImageView { nullptr };
+    AllocatedImage  colorImage;
+    AllocatedImage  depthImage;
 
     uint32_t                mipLevels {0};
     ktxVulkanTexture        texture;
@@ -129,12 +126,9 @@ private:
     vk::raii::Pipeline                      graphicsPipeline { nullptr };
 
     vk::raii::CommandPool                   graphicsCommandPool { nullptr };
-    std::vector<vk::raii::CommandBuffer>    graphicsCommandBuffers {};
     vk::raii::CommandPool                   transferCommandPool { nullptr };
 
-    std::vector<vk::raii::Semaphore>    presentCompleteSemaphores;
-    std::vector<vk::raii::Semaphore>    renderFinishedSemaphores;
-    std::vector<vk::raii::Fence>        inFlightFences;
+    std::vector<FrameData>      frames {};
     size_t      currentFrame {0};
 
     std::array<ModelObject, MAX_OBJECTS>        modelObjects {};
@@ -157,9 +151,6 @@ private:
     };
 
 private:
-    void initWindow();
-    void initVulkan();
-    void mainLoop();
     void cleanup();
     void cleanupSwapChain();
 
@@ -170,6 +161,7 @@ private:
     void checkFeatureSupport();
     void detectFeatureSupport();
     void createLogicalDevice();
+    void createMemoryAllocator();
 
     void createSwapChain();
     void createImageViews();
@@ -195,10 +187,9 @@ private:
 
     void createDescriptorPool();
     void createDescriptorSets();
-    void createCommandBuffers();
-    void createSyncObjects();
+    void createFrameData();
 
-    void recordCommandBuffer(uint32_t imageIndex) const;
+    void recordCommandBuffer(uint32_t imageIndex);
     void updateUniformBuffer(uint32_t currentImage);
     void drawFrame();
 
@@ -240,37 +231,8 @@ private:
         vk::raii::DeviceMemory& bufferMemory
     ) const;
 
-    void createImage(
-        uint32_t width,
-        uint32_t height,
-        uint32_t mipLevels,
-        vk::SampleCountFlagBits numSamples,
-        vk::Format format,
-        vk::ImageTiling tiling,
-        vk::ImageUsageFlags usage,
-        vk::MemoryPropertyFlags properties,
-        vk::raii::Image& image,
-        vk::raii::DeviceMemory& imageMemory
-    ) const;
-
     [[nodiscard]]
-    vk::raii::ImageView createImageView(
-        const vk::raii::Image& image,
-        vk::Format format,
-        vk::ImageAspectFlags aspectFlags,
-        uint32_t mipLevels
-    ) const;
-
-    [[nodiscard]]
-    vk::raii::ImageView createImageView(
-        VkImage image,
-        VkFormat format,
-        VkImageAspectFlags aspectFlags,
-        uint32_t mipLevels
-    ) const;
-
-    [[nodiscard]]
-    std::unique_ptr<vk::raii::CommandBuffer> beginSingleTimeCommands(const vk::raii::CommandPool& commandPool) const;
+    vk::raii::CommandBuffer beginSingleTimeCommands(const vk::raii::CommandPool& commandPool) const;
     void endSingleTimeCommands(
         const vk::raii::CommandBuffer& commandBuffer,
         const vk::raii::Queue& queue
@@ -281,43 +243,7 @@ private:
         const vk::raii::Buffer& dstBuffer,
         vk::DeviceSize size
     ) const;
-
-    void transitionImageLayout(
-        const vk::raii::Image& image,
-        // vk::Format format,
-        vk::ImageLayout oldLayout,
-        vk::ImageLayout newLayout,
-        uint32_t mipLevels
-    ) const;
-    void transitionImageLayout(
-        const vk::Image& image,
-        // vk::Format format,
-        vk::ImageLayout oldLayout,
-        vk::ImageLayout newLayout,
-        uint32_t mipLevels
-    ) const;
-    void transitionImageLayout(
-        const vk::raii::Image& image,
-        vk::ImageLayout oldLayout,
-        vk::ImageLayout newLayout,
-        vk::Flags<vk::AccessFlagBits2> srcAccessMask,
-        vk::Flags<vk::AccessFlagBits2> dstAccessMask,
-        vk::PipelineStageFlagBits2 srcStageMask,
-        vk::PipelineStageFlagBits2 dstStageMask,
-        vk::ImageAspectFlagBits aspectMask,
-        uint32_t mipLevels
-    ) const;
-    void transitionImageLayout(
-        const vk::Image& image,
-        vk::ImageLayout oldLayout,
-        vk::ImageLayout newLayout,
-        vk::Flags<vk::AccessFlagBits2> srcAccessMask,
-        vk::Flags<vk::AccessFlagBits2> dstAccessMask,
-        vk::PipelineStageFlagBits2 srcStageMask,
-        vk::PipelineStageFlagBits2 dstStageMask,
-        vk::ImageAspectFlagBits aspectMask,
-        uint32_t mipLevels
-    ) const;
+    
     void copyBufferToImage(
         const vk::raii::Buffer& buffer,
         const vk::raii::Image& image,

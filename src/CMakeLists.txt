@@ -29,13 +29,14 @@ find_package(Ktx CONFIG REQUIRED)
 target_link_libraries(${TARGET} PRIVATE KTX::ktx)
 
 find_package (Vulkan REQUIRED)
-# target_link_libraries(${TARGET} PRIVATE Vulkan::Vulkan)
 # set up Vulkan C++ module
 add_library(VulkanCppModule)
 add_library(Vulkan::cppm ALIAS VulkanCppModule)
 
 target_compile_definitions(VulkanCppModule PUBLIC
-    VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
+    # VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
+    # VULKAN_HPP_DEFAULT_DISPATCHER=1
+    VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE=1
     VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
 )
 target_include_directories(VulkanCppModule

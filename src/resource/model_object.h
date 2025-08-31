@@ -1,14 +1,7 @@
 #pragma once
 
-#define GLM_FORCE_RADIANS
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-
-#ifdef __INTELLISENSE__
-#include <vulkan/vulkan_raii.hpp>
-#else
-import vulkan_hpp;
-#endif
+#include "common/glm_common.h"
+#include "common/vk_common.h"
 
 #include <vector>
 #include <limits>

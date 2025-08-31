@@ -2,7 +2,7 @@
 
 #include "window/window.h"
 #include "window/input_events.h"
-#include "engine/so_engine.h"
+#include "core/so_engine.h"
 #include "utils/timer.h"
 
 #include <memory>
