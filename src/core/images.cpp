@@ -2,45 +2,10 @@
 
 #include <stdexcept>
 
-vk::ImageCreateInfo imageCreateInfo(vk::Format format,
-                                    vk::Extent3D extent,
-                                    uint32_t mipLevels,
-                                    vk::SampleCountFlagBits samples,
-                                    vk::ImageTiling tiling,
-                                    vk::ImageUsageFlags usage)
-{
-    return vk::ImageCreateInfo{
-        .imageType = vk::ImageType::e2D,
-        .format = format,
-        .extent = extent,
-        .mipLevels = mipLevels,
-        .arrayLayers = 1,
-        .samples = samples,
-        .tiling = tiling,
-        .usage = usage,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .initialLayout = vk::ImageLayout::eUndefined
-    };
-}
+#include "initializers.h"
 
-vk::ImageViewCreateInfo imageViewCreateInfo(vk::Image image,
-                                            vk::Format format,
-                                            vk::ImageAspectFlags aspectFlags,
-                                            uint32_t mipLevels)
+namespace vkutil
 {
-    return vk::ImageViewCreateInfo{
-        .image = image,
-        .viewType = vk::ImageViewType::e2D,
-        .format = format,
-        .components = {
-            .r = vk::ComponentSwizzle::eIdentity,
-            .g = vk::ComponentSwizzle::eIdentity,
-            .b = vk::ComponentSwizzle::eIdentity,
-            .a = vk::ComponentSwizzle::eIdentity
-        },
-        .subresourceRange = { aspectFlags, 0, mipLevels, 0, 1 }
-    };
-}
 
 vk::raii::ImageView createImageView(const vk::raii::Device& device,
                                         vk::Image image,
@@ -48,42 +13,8 @@ vk::raii::ImageView createImageView(const vk::raii::Device& device,
                                         vk::ImageAspectFlags aspectFlags,
                                         uint32_t mipLevels)
 {
-    auto viewInfo = imageViewCreateInfo(image, format, aspectFlags, mipLevels);
+    auto viewInfo = vkinit::imageViewCreateInfo(image, format, aspectFlags, mipLevels);
     return device.createImageView(viewInfo);
-}
-
-AllocatedImage createAllocatedImage(const vk::raii::Device& device,
-                                    VmaAllocator allocator,
-                                    vk::Extent3D extent,
-                                    uint32_t mipLevels,
-                                    vk::SampleCountFlagBits numSamples,
-                                    vk::Format format,
-                                    vk::ImageTiling tiling,
-                                    vk::ImageUsageFlags usage,
-                                    vk::MemoryPropertyFlags properties)
-{
-    AllocatedImage allocatedImage {};
-    allocatedImage.imageExtent = extent;
-    allocatedImage.imageFormat = format;
-
-    auto imageInfo = VkImageCreateInfo(imageCreateInfo(format, extent, mipLevels, numSamples, tiling, usage));
-    VmaAllocationCreateInfo allocInfo {
-        .usage = VMA_MEMORY_USAGE_AUTO,
-        .requiredFlags = static_cast<VkMemoryPropertyFlags>(properties),
-    };
-
-    VkImage _image;
-    if (vmaCreateImage(allocator, &imageInfo, &allocInfo,
-        &_image, &allocatedImage.allocation, nullptr) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create image");
-    }
-    allocatedImage.image = _image;
-
-    auto imageViewInfo = imageViewCreateInfo(allocatedImage.image, format, vk::ImageAspectFlagBits::eColor, mipLevels);
-
-    allocatedImage.imageView = (*device).createImageView(imageViewInfo);
-
-    return allocatedImage;
 }
 
 void transitionImageLayout(const vk::raii::CommandBuffer& commandBuffer,
@@ -126,11 +57,6 @@ void transitionImageLayout(const vk::raii::CommandBuffer& commandBuffer,
         dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
         srcAccessMask = {};
         dstAccessMask = vk::AccessFlagBits2::eTransferWrite;
-    } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
-        srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
-        dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
-        srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
-        dstAccessMask = vk::AccessFlagBits2::eShaderRead;
     } else if (oldLayout == vk::ImageLayout::eUndefined &&
                (newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal ||
                 newLayout == vk::ImageLayout::eDepthAttachmentOptimal)) {
@@ -138,6 +64,16 @@ void transitionImageLayout(const vk::raii::CommandBuffer& commandBuffer,
         dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests;
         srcAccessMask = {};
         dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
+    } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+        srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+        dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
+        srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+        dstAccessMask = vk::AccessFlagBits2::eShaderRead;
+    } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eColorAttachmentOptimal) {
+        srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+        dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+        srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+        dstAccessMask = vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite;
     } else if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eColorAttachmentOptimal) {
         srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
         dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
@@ -147,6 +83,16 @@ void transitionImageLayout(const vk::raii::CommandBuffer& commandBuffer,
         srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
         dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe;
         srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
+        dstAccessMask = {};
+    } else if (oldLayout == vk::ImageLayout::eColorAttachmentOptimal && newLayout == vk::ImageLayout::eTransferSrcOptimal) {
+        srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+        dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
+        srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
+        dstAccessMask = vk::AccessFlagBits2::eTransferRead;
+    } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::ePresentSrcKHR) {
+        srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+        dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe;
+        srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
         dstAccessMask = {};
     } else {
         throw std::invalid_argument("unsupported layout transition!");
@@ -184,3 +130,37 @@ void transitionImageLayout(const vk::raii::CommandBuffer& commandBuffer,
     };
     commandBuffer.pipelineBarrier2(dependencyInfo);
 }
+
+void copyImageToImage(const vk::raii::CommandBuffer& commandBuffer,
+                      vk::Image srcImage,
+                      vk::Image dstImage,
+                      const vk::Extent2D& srcSize,
+                      const vk::Extent2D& dstSize)
+{
+    // Blit image lets you copy images of different formats and different sizes into one another
+    vk::ImageBlit2 blitRegion {};
+
+    blitRegion.srcOffsets[1].x = srcSize.width;
+    blitRegion.srcOffsets[1].y = srcSize.height;
+    blitRegion.srcOffsets[1].z = 1;
+
+    blitRegion.dstOffsets[1].x = dstSize.width;
+    blitRegion.dstOffsets[1].y = dstSize.height;
+    blitRegion.dstOffsets[1].z = 1;
+
+    blitRegion.srcSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+    blitRegion.dstSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+
+    vk::BlitImageInfo2 blitInfo {
+        .srcImage = srcImage,
+        .srcImageLayout = vk::ImageLayout::eTransferSrcOptimal,
+        .dstImage = dstImage,
+        .dstImageLayout = vk::ImageLayout::eTransferDstOptimal,
+        .regionCount = 1,
+        .pRegions = &blitRegion,
+        .filter = vk::Filter::eLinear
+    };
+    commandBuffer.blitImage2(blitInfo);
+}
+
+}   // namespace vkutil

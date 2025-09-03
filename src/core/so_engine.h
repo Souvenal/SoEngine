@@ -5,8 +5,8 @@
 #include "window/input_events.h"
 #include "resource/model_object.h"
 #include "config.h"
-#include "types.h"
-#include "descriptor.h"
+#include "pipelines.h"
+#include "descriptors.h"
 #include "images.h"
 #include "frame_data.h"
 
@@ -17,18 +17,6 @@
 #include <memory>
 #include <filesystem>
 
-struct QueueFamilyIndices {
-    std::optional<uint32_t> graphicsFamily; // support drawing commands
-    std::optional<uint32_t> presentFamily;  // support presentation
-    std::optional<uint32_t> transferFamily; // support transfer operations
-
-    [[nodiscard]] bool isComplete() const {
-        return
-            graphicsFamily.has_value() &&
-            presentFamily.has_value() &&
-            transferFamily.has_value();
-    }
-};
 
 class SoEngine {
 public:
@@ -64,14 +52,16 @@ private:
     vk::raii::Context                           context {};
     std::unique_ptr<vk::raii::Instance>         instance;
     vk::raii::SurfaceKHR                        surface { nullptr };
+    Window::Extent                              windowExtent {};
 
     vk::raii::DebugUtilsMessengerEXT            debugMessenger { nullptr };
 
     std::unique_ptr<vk::raii::PhysicalDevice>   physicalDevice {};
     vk::raii::Device                            device { nullptr };
 
-    VmaAllocator                                allocator { nullptr };
+    MemoryAllocator     memoryAllocator {};
 
+    QueueFamilyIndices  queueFamilyIndices {};
     uint32_t        graphicsIndex {};
     uint32_t        presentIndex {};
     uint32_t        transferIndex {};
@@ -92,13 +82,14 @@ private:
     vk::raii::RenderPass                renderPass { nullptr };
     std::vector<vk::raii::Framebuffer>  swapChainFramebuffers;
 
-    // vk::raii::Image                 colorImage { nullptr };
-    // vk::raii::DeviceMemory          colorImageMemory { nullptr };
-    // vk::raii::ImageView             colorImageView { nullptr };
+    DescriptorAllocator                 globalDescriptorAllocator {};
+    vk::raii::DescriptorSetLayout       drawImageDescriptorSetLayout { nullptr };
 
-    // vk::raii::Image         depthImage { nullptr };
-    // vk::raii::DeviceMemory  depthImageMemory { nullptr };
-    // vk::raii::ImageView     depthImageView { nullptr };
+    vk::raii::PipelineLayout            pipelineLayout { nullptr };
+    vk::raii::Pipeline                  graphicsPipeline { nullptr };
+
+    // Need more than one draw image for each frame in flight
+    AllocatedImage  drawImage;
     AllocatedImage  colorImage;
     AllocatedImage  depthImage;
 
@@ -109,21 +100,12 @@ private:
 
     std::vector<Vertex>     vertices {};
     std::vector<uint32_t>   indices {};
-    vk::raii::Buffer        vertexBuffer { nullptr };
-    vk::raii::DeviceMemory  vertexBufferMemory { nullptr };
-    vk::raii::Buffer        indexBuffer { nullptr };
-    vk::raii::DeviceMemory  indexBufferMemory { nullptr };
-
-    // std::vector<vk::raii::Buffer>       uniformBuffers {};
-    // std::vector<vk::raii::DeviceMemory> uniformBuffersMemory {};
-    // std::vector<void*>                  uniformBuffersMapped {};
-
-    vk::raii::DescriptorSetLayout           descriptorSetLayout { nullptr };
-    vk::raii::DescriptorPool                descriptorPool { nullptr };
-    // std::vector<vk::raii::DescriptorSet>    descriptorSets {};
-
-    vk::raii::PipelineLayout                pipelineLayout { nullptr };
-    vk::raii::Pipeline                      graphicsPipeline { nullptr };
+    // vk::raii::Buffer        vertexBuffer { nullptr };
+    // vk::raii::DeviceMemory  vertexBufferMemory { nullptr };
+    // vk::raii::Buffer        indexBuffer { nullptr };
+    // vk::raii::DeviceMemory  indexBufferMemory { nullptr };
+    AllocatedBuffer     vertexBuffer;
+    AllocatedBuffer     indexBuffer;
 
     vk::raii::CommandPool                   graphicsCommandPool { nullptr };
     vk::raii::CommandPool                   transferCommandPool { nullptr };
@@ -147,7 +129,8 @@ private:
     #endif
         vk::KHRSwapchainExtensionName,
         vk::KHRSpirv14ExtensionName,
-        vk::KHRCreateRenderpass2ExtensionName
+        vk::KHRCreateRenderpass2ExtensionName,
+        vk::KHRCopyCommands2ExtensionName
     };
 
 private:
@@ -162,12 +145,11 @@ private:
     void detectFeatureSupport();
     void createLogicalDevice();
     void createMemoryAllocator();
-
     void createSwapChain();
-    void createImageViews();
 
-    void createDescriptorSetLayout();
+    void initDescriptors();
     void createGraphicsPipeline();
+
     void createCommandPool();
 
     void createColorResources();
@@ -184,19 +166,18 @@ private:
     void createVertexBuffer();
     void createIndexBuffer();
     void createUniformBuffers();
-
-    void createDescriptorPool();
     void createDescriptorSets();
+
     void createFrameData();
 
-    void recordCommandBuffer(uint32_t imageIndex);
+
     void updateUniformBuffer(uint32_t currentImage);
     void drawFrame();
+    void drawBackground(const vk::raii::CommandBuffer& commandBuffer, uint32_t imageIndex);
 
     /**
      * Helper functions
      */
-    static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
     bool isDeviceSuitable(const vk::raii::PhysicalDevice& device);
     [[nodiscard]] std::vector<const char*> getRequiredLayers() const;
     void checkLayerSupport(const std::vector<const char*>& requiredLayers) const;
@@ -220,9 +201,6 @@ private:
     [[nodiscard]]
     vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities) const noexcept;
 
-    [[nodiscard]]
-    vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const;
-
     void createBuffer(
         vk::DeviceSize size,
         vk::BufferUsageFlags usage,
@@ -231,17 +209,17 @@ private:
         vk::raii::DeviceMemory& bufferMemory
     ) const;
 
+    void copyBuffer(
+        const vk::Buffer& srcBuffer,
+        const vk::Buffer& dstBuffer,
+        vk::DeviceSize size
+    ) const;
+
     [[nodiscard]]
     vk::raii::CommandBuffer beginSingleTimeCommands(const vk::raii::CommandPool& commandPool) const;
     void endSingleTimeCommands(
         const vk::raii::CommandBuffer& commandBuffer,
         const vk::raii::Queue& queue
-    ) const;
-
-    void copyBuffer(
-        const vk::raii::Buffer& srcBuffer,
-        const vk::raii::Buffer& dstBuffer,
-        vk::DeviceSize size
     ) const;
     
     void copyBufferToImage(

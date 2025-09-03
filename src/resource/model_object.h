@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/glm_common.h"
-#include "common/vk_common.h"
+#include "core/types.h"
 
 #include <vector>
 #include <limits>
@@ -19,9 +19,10 @@ struct ModelObject {
     float maxZ { maxX };
 
     // Uniform buffer for this object (one per frame in flight)
-    std::vector<vk::raii::Buffer>       uniformBuffers;
-    std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
-    std::vector<void*>                  uniformBuffersMapped;
+    // std::vector<vk::raii::Buffer>       uniformBuffers;
+    // std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
+    // std::vector<void*>                  uniformBuffersMapped;
+    std::vector<AllocatedBuffer> uniformBuffers;
 
     // Descriptor sets for this object (one per frame in flight)
     std::vector<vk::raii::DescriptorSet> descriptorSets;

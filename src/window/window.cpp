@@ -266,3 +266,7 @@ Window::Extent Window::getFramebufferSize() const {
     glfwGetFramebufferSize(handle, &width, &height);
     return {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
 }
+
+Window::Extent Window::getWindowSize() const {
+    return properties.extent;
+}

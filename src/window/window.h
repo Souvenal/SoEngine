@@ -50,6 +50,7 @@ public:
     Extent resize(const Extent& extent);
 
     [[nodiscard]] Extent getFramebufferSize() const;
+    [[nodiscard]] Extent getWindowSize() const;
 
 private:
     Properties  properties  {};
