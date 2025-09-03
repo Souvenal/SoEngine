@@ -201,20 +201,6 @@ private:
     [[nodiscard]]
     vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities) const noexcept;
 
-    void createBuffer(
-        vk::DeviceSize size,
-        vk::BufferUsageFlags usage,
-        vk::MemoryPropertyFlags properties,
-        vk::raii::Buffer& buffer,
-        vk::raii::DeviceMemory& bufferMemory
-    ) const;
-
-    void copyBuffer(
-        const vk::Buffer& srcBuffer,
-        const vk::Buffer& dstBuffer,
-        vk::DeviceSize size
-    ) const;
-
     [[nodiscard]]
     vk::raii::CommandBuffer beginSingleTimeCommands(const vk::raii::CommandPool& commandPool) const;
     void endSingleTimeCommands(

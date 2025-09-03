@@ -385,7 +385,7 @@ void SoEngine::createSwapChain() {
         vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
         vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eColorAttachment,
-        vk::MemoryPropertyFlagBits::eDeviceLocal
+        MemoryType::DeviceLocal
     );
 }
 
@@ -742,7 +742,7 @@ void SoEngine::createColorResources() {
         1, msaaSamples,
         colorFormat, vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
-        vk::MemoryPropertyFlagBits::eDeviceLocal);
+        MemoryType::DeviceLocal);
 }
 
 void SoEngine::createDepthResources() {
@@ -752,7 +752,7 @@ void SoEngine::createDepthResources() {
         1, msaaSamples,
         depthFormat, vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eDepthStencilAttachment,
-        vk::MemoryPropertyFlagBits::eDeviceLocal
+        MemoryType::DeviceLocal
     );
 }
 
@@ -970,120 +970,41 @@ void SoEngine::setupModelObjects() {
 void SoEngine::createVertexBuffer() {
     const vk::DeviceSize bufferSize = sizeof(Vertex) * vertices.size();
 
-    // vk::raii::Buffer stagingBuffer {nullptr};
-    // vk::raii::DeviceMemory stagingBufferMemory {nullptr};
-    // createBuffer(bufferSize,
-    //     vk::BufferUsageFlagBits::eTransferSrc,
-    //     vk::MemoryPropertyFlagBits::eHostVisible |
-    //     vk::MemoryPropertyFlagBits::eHostCoherent,
-    //     stagingBuffer, stagingBufferMemory
-    // );
     AllocatedBuffer stagingBuffer {
         memoryAllocator.allocator, queueFamilyIndices, bufferSize,
         vk::BufferUsageFlagBits::eTransferSrc,
-        BufferMemoryType::HostVisible
+        MemoryType::HostVisible
     };
 
-    // void* data = stagingBufferMemory.mapMemory(0, bufferSize);
-    // memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
-    // stagingBufferMemory.unmapMemory();
     stagingBuffer.write(vertices.data(), vertices.size());
 
-    // createBuffer(bufferSize,
-    //     vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-    //     vk::MemoryPropertyFlagBits::eDeviceLocal,
-    //     vertexBuffer, vertexBufferMemory
-    // );
     vertexBuffer = AllocatedBuffer{
         memoryAllocator.allocator, queueFamilyIndices, bufferSize,
         vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-        BufferMemoryType::DeviceLocal
+        MemoryType::DeviceLocal
     };
 
-    // copyBuffer(stagingBuffer.buffer, vertexBuffer, bufferSize);
     auto cmd = beginSingleTimeCommands(transferCommandPool);
     vkutil::copyAllocatedBuffer(cmd, stagingBuffer, vertexBuffer, bufferSize);
     endSingleTimeCommands(cmd, transferQueue);
 }
 
-void SoEngine::createBuffer(
-    vk::DeviceSize size,
-    vk::BufferUsageFlags usage,
-    vk::MemoryPropertyFlags properties,
-    vk::raii::Buffer& buffer,
-    vk::raii::DeviceMemory& bufferMemory
-) const {
-    uint32_t queueFamilyIndices[] = {
-        graphicsIndex, transferIndex
-    };
-
-    vk::BufferCreateInfo bufferInfo {
-        .size = size,
-        .usage = usage
-    };
-    if (graphicsIndex == transferIndex) {
-        bufferInfo.sharingMode = vk::SharingMode::eExclusive;
-        bufferInfo.queueFamilyIndexCount = 0;
-        bufferInfo.pQueueFamilyIndices = nullptr;
-    } else {
-        bufferInfo.sharingMode = vk::SharingMode::eConcurrent;
-        bufferInfo.queueFamilyIndexCount = 2;
-        bufferInfo.pQueueFamilyIndices = queueFamilyIndices;
-    }
-
-    buffer = vk::raii::Buffer{device, bufferInfo};
-
-    vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
-
-    vk::MemoryAllocateInfo allocInfo {
-        .allocationSize = memRequirements.size,
-        .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties)
-    };
-    bufferMemory = vk::raii::DeviceMemory{device, allocInfo};
-    buffer.bindMemory(bufferMemory, 0);
-}
-
-void SoEngine::copyBuffer(
-    const vk::Buffer& srcBuffer,
-    const vk::Buffer& dstBuffer,
-    vk::DeviceSize size
-) const {
-    auto commandCopyBuffer = beginSingleTimeCommands(transferCommandPool);
-    commandCopyBuffer.copyBuffer(srcBuffer, dstBuffer, vk::BufferCopy{0, 0, size});
-    endSingleTimeCommands(commandCopyBuffer, transferQueue);
-}
-
 void SoEngine::createIndexBuffer() {
     const vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
-    // vk::raii::Buffer stagingBuffer {nullptr};
-    // vk::raii::DeviceMemory stagingBufferMemory {nullptr};
-    // createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-    //     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-    //     stagingBuffer, stagingBufferMemory
-    // );
     AllocatedBuffer stagingBuffer{
         memoryAllocator.allocator, queueFamilyIndices, bufferSize,
-        vk::BufferUsageFlagBits::eTransferSrc, BufferMemoryType::HostVisible
+        vk::BufferUsageFlagBits::eTransferSrc, MemoryType::HostVisible
     };
 
-    // void* data = stagingBufferMemory.mapMemory(0, bufferSize);
-    // memcpy(data, indices.data(), static_cast<size_t>(bufferSize));
-    // stagingBufferMemory.unmapMemory();
     stagingBuffer.write(indices.data(), indices.size());
 
-    // createBuffer(bufferSize,
-    //     vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
-    //     vk::MemoryPropertyFlagBits::eDeviceLocal,
-    //     indexBuffer, indexBufferMemory
-    // );
     indexBuffer = AllocatedBuffer{
         memoryAllocator.allocator, queueFamilyIndices, bufferSize,
         vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
-        BufferMemoryType::DeviceLocal
+        MemoryType::DeviceLocal
     };
 
-    // copyBuffer(stagingBuffer, indexBuffer, bufferSize);
     auto cmd = beginSingleTimeCommands(transferCommandPool);
     vkutil::copyAllocatedBuffer(cmd, stagingBuffer, indexBuffer, bufferSize);
     endSingleTimeCommands(cmd, transferQueue);
@@ -1093,25 +1014,14 @@ void SoEngine::createUniformBuffers() {
     // For each model object
     for (auto& object : modelObjects) {
         object.uniformBuffers.clear();
-        // object.uniformBuffersMemory.clear();
-        // object.uniformBuffersMapped.clear();
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
             constexpr vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
-            // vk::raii::Buffer buffer {{}};
-            // vk::raii::DeviceMemory bufferMemory {{}};
-            // createBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer,
-            //     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            //     buffer, bufferMemory
-            // );
             AllocatedBuffer buffer{
                 memoryAllocator.allocator, queueFamilyIndices, bufferSize,
                 vk::BufferUsageFlagBits::eUniformBuffer,
-                BufferMemoryType::HostVisible
+                MemoryType::HostVisible
             };
-            // object.uniformBuffers.emplace_back(std::move(buffer));
-            // object.uniformBuffersMemory.emplace_back(std::move(bufferMemory));
-            // object.uniformBuffersMapped.emplace_back(object.uniformBuffersMemory[i].mapMemory(0, bufferSize));
             object.uniformBuffers.emplace_back(std::move(buffer));
         }
     }

@@ -41,23 +41,14 @@ AllocatedBuffer::AllocatedBuffer(VmaAllocator allocator,
                                 const QueueFamilyIndices& indices,
                                 vk::DeviceSize size,
                                 vk::BufferUsageFlags usage,
-                                BufferMemoryType memoryType):
+                                MemoryType memoryType):
     allocator(allocator)
 {
     auto bufferInfo = VkBufferCreateInfo(vkinit::bufferCreateInfo(size, usage, indices));
-
-    VmaAllocationCreateInfo vmaAllocInfo {};
-    if (memoryType == BufferMemoryType::DeviceLocal) {
-        vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    } else if (memoryType == BufferMemoryType::HostVisible) {
-        vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-        vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    } else {
-        throw std::runtime_error("Unsupported BufferMemoryType");
-    }
+    auto vmaAllocCreateInfo = vkinit::vmaAllocationCreateInfo(memoryType);
 
     VkBuffer _buffer;
-    if (vmaCreateBuffer(allocator, &bufferInfo, &vmaAllocInfo, &_buffer, &allocation, &allocationInfo) != VK_SUCCESS) {
+    if (vmaCreateBuffer(allocator, &bufferInfo, &vmaAllocCreateInfo, &_buffer, &allocation, &allocationInfo) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create buffer!");
     }
     buffer = vk::Buffer(_buffer);
@@ -81,7 +72,7 @@ AllocatedBuffer& AllocatedBuffer::operator=(AllocatedBuffer&& rhs) {
     rhs.allocationInfo = {};
     rhs.allocator = nullptr;
     return *this;
-}     
+}
 
 AllocatedBuffer::~AllocatedBuffer() {
     if (allocator && buffer && allocation != VK_NULL_HANDLE)
@@ -109,20 +100,17 @@ AllocatedImage::AllocatedImage(const vk::Device& device,
                                vk::Format format,
                                vk::ImageTiling tiling,
                                vk::ImageUsageFlags usage,
-                               vk::MemoryPropertyFlags properties):
+                               MemoryType memoryType):
     device(device), allocator(allocator)
 {
     imageExtent = extent;
     imageFormat = format;
 
     auto imageInfo = VkImageCreateInfo(vkinit::imageCreateInfo(format, extent, mipLevels, numSamples, tiling, usage));
-    VmaAllocationCreateInfo allocInfo {
-        .usage = VMA_MEMORY_USAGE_AUTO,
-        .requiredFlags = static_cast<VkMemoryPropertyFlags>(properties),
-    };
+    auto vmaAllocCreateInfo = vkinit::vmaAllocationCreateInfo(memoryType);
 
     VkImage _image;
-    if (vmaCreateImage(allocator, &imageInfo, &allocInfo,
+    if (vmaCreateImage(allocator, &imageInfo, &vmaAllocCreateInfo,
         &_image, &allocation, nullptr) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create image");
     }

@@ -25,5 +25,7 @@ vk::ImageViewCreateInfo imageViewCreateInfo(vk::Image image,
                                             vk::ImageAspectFlags aspectFlags,
                                             uint32_t mipLevels);
 
+[[nodiscard]]
+VmaAllocationCreateInfo vmaAllocationCreateInfo(MemoryType memoryType);
 
 }   // namespace vkinit

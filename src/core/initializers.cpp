@@ -66,5 +66,19 @@ vk::ImageViewCreateInfo imageViewCreateInfo(vk::Image image,
         .subresourceRange = { aspectFlags, 0, mipLevels, 0, 1 }
     };
 }
-    
+
+[[nodiscard]]
+VmaAllocationCreateInfo vmaAllocationCreateInfo(MemoryType memoryType) {
+    VmaAllocationCreateInfo vmaAllocCreateInfo {};
+    if (memoryType == MemoryType::DeviceLocal) {
+        vmaAllocCreateInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    } else if (memoryType == MemoryType::HostVisible) {
+        vmaAllocCreateInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+        vmaAllocCreateInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    } else {
+        throw std::runtime_error("Unsupported BufferMemoryType");
+    }
+    return vmaAllocCreateInfo;
+}
+
 }   // namespace vkinit

@@ -36,7 +36,7 @@ public:
     ~MemoryAllocator();
 };
 
-enum class BufferMemoryType {
+enum class MemoryType {
     DeviceLocal,
     HostVisible
 };
@@ -56,7 +56,7 @@ public:
                     const QueueFamilyIndices& indices,
                     vk::DeviceSize size,
                     vk::BufferUsageFlags usage,
-                    BufferMemoryType memoryType); 
+                    MemoryType memoryType); 
     ~AllocatedBuffer();
 
     template<typename T>
@@ -94,7 +94,7 @@ public:
                   vk::Format format,
                   vk::ImageTiling tiling,
                   vk::ImageUsageFlags usage,
-                  vk::MemoryPropertyFlags properties);
+                  MemoryType memoryType);
     ~AllocatedImage();
 
 private:
