@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <string>
 
-class Application;
+class SoEngine;
 
 class Window {
 public:
@@ -34,7 +34,7 @@ public:
         Extent      extent      { 800, 600 };
     };
 
-    Window(Application* app, const Properties& properties);
+    Window(SoEngine* engine, const Properties& properties);
     ~Window();
 
     vk::raii::SurfaceKHR createSurface(const vk::raii::Instance& instance) const;

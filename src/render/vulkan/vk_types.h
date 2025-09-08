@@ -9,14 +9,10 @@
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily; // support drawing commands
     std::optional<uint32_t> presentFamily;  // support presentation
+    std::optional<uint32_t> computeFamily;  // support compute operations
     std::optional<uint32_t> transferFamily; // support transfer operations
 
-    [[nodiscard]] bool isComplete() const {
-        return
-            graphicsFamily.has_value() &&
-            presentFamily.has_value() &&
-            transferFamily.has_value();
-    }
+    [[nodiscard]] bool isComplete() const;
 };
 
 class MemoryAllocator {
@@ -66,11 +62,11 @@ public:
         unmap();
     }
 
-private:
-    VmaAllocator allocator      { nullptr };
-
     void* map(vk::DeviceSize offset = 0, vk::DeviceSize size = vk::WholeSize);
     void unmap();
+
+private:
+    VmaAllocator allocator      { nullptr };
 };
 
 class AllocatedImage {
@@ -94,6 +90,7 @@ public:
                   vk::Format format,
                   vk::ImageTiling tiling,
                   vk::ImageUsageFlags usage,
+                  vk::ImageAspectFlags aspectFlags,
                   MemoryType memoryType);
     ~AllocatedImage();
 
@@ -102,33 +99,16 @@ private:
     VmaAllocator    allocator   { nullptr };
 };
 
-struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 color;
-    glm::vec2 texCoord;
-
-    static vk::VertexInputBindingDescription getBindingDescription();
-    static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions();
-
-    bool operator==(const Vertex& other) const;
-};
-
-template<>
-struct std::hash<Vertex> {
-    size_t operator()(Vertex const& vertex) const noexcept {
-        return ((hash<glm::vec3>{}(vertex.pos)) ^
-                ((hash<glm::vec3>{}(vertex.color) << 1) >> 1) ^
-                (hash<glm::vec2>{}(vertex.texCoord) << 1)
-        );
-    }
-};
-
 namespace vkutil
 {
+
+[[nodiscard]]
+QueueFamilyIndices findQueueFamilies(const vk::raii::PhysicalDevice& physicalDevice,
+                                     const vk::raii::SurfaceKHR& surface);
 
 void copyAllocatedBuffer(const vk::raii::CommandBuffer& commandBuffer,
                          const AllocatedBuffer& src,
                          const AllocatedBuffer& dst,
                          vk::DeviceSize size);
-    
+
 }   // namespace vkutil

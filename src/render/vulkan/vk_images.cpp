@@ -1,8 +1,8 @@
-#include "images.h"
+#include "vk_images.h"
 
-#include <stdexcept>
+#include "utils/logging.h"
+#include "vk_initializers.h"
 
-#include "initializers.h"
 
 namespace vkutil
 {
@@ -161,6 +161,119 @@ void copyImageToImage(const vk::raii::CommandBuffer& commandBuffer,
         .filter = vk::Filter::eLinear
     };
     commandBuffer.blitImage2(blitInfo);
+}
+
+void copyBufferToImage(
+        const vk::raii::CommandBuffer& commandBuffer,
+        const vk::raii::Buffer& buffer,
+        const vk::raii::Image& image,
+        uint32_t width,
+        uint32_t height) {
+    ASSERT(*buffer, "Invalid buffer");
+    ASSERT(*image, "Invalid image");
+    vk::BufferImageCopy region {
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1},
+        .imageOffset = {0, 0, 0},
+        .imageExtent = {
+            .width = width,
+            .height = height,
+            .depth = 1}};
+    commandBuffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, {region});
+}
+
+void generateMipmaps(
+        const vk::raii::PhysicalDevice& physicalDevice,
+        const vk::raii::CommandBuffer& commandBuffer,
+        const vk::raii::Image& image,
+        vk::Format imageFormat,
+        int32_t texWidth,
+        int32_t texHeight,
+        uint32_t mipLevels) {
+    ASSERT(*physicalDevice, "Invalid physical device");
+    ASSERT(*commandBuffer, "Invalid command buffer");
+    ASSERT(*image, "Invalid image");
+    // Check if the image format supports linear blitting
+    vk::FormatProperties formatProperties = physicalDevice.getFormatProperties(imageFormat);
+    if (!(formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
+        throw std::runtime_error("Texture image format does not support linear blitting!");
+    }
+    // alternatives:
+    // 1.   search common texture image formats for one
+    //      that does support linear bitting
+    // 2.   implement the mipmap generation in software with a library like stb_image_resize
+
+    vk::ImageMemoryBarrier barrier {
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = image,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        }
+    };
+
+    int32_t mipWidth {texWidth}, mipHeight {texHeight};
+    for (uint32_t i = 1; i < mipLevels; ++i) {
+        barrier.subresourceRange.baseMipLevel = i - 1;
+        barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+        barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+        barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+        barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+
+        commandBuffer.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTransfer,
+            vk::PipelineStageFlagBits::eTransfer,
+            {}, {}, {}, barrier);
+
+        vk::ArrayWrapper1D<vk::Offset3D, 2> srcOffsets, dstOffsets;
+        srcOffsets[0] = {0, 0, 0};
+        srcOffsets[1] = {mipWidth, mipHeight, 1};
+        dstOffsets[0] = {0, 0, 0};
+        dstOffsets[1] = {mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1};
+        vk::ImageBlit blit {
+            .srcSubresource = {vk::ImageAspectFlagBits::eColor, i -1 , 0, 1},
+            .srcOffsets = srcOffsets,
+            .dstSubresource = {vk::ImageAspectFlagBits::eColor, i, 0, 1},
+            .dstOffsets = dstOffsets,
+        };
+        commandBuffer.blitImage(
+            image, vk::ImageLayout::eTransferSrcOptimal,
+            image, vk::ImageLayout::eTransferDstOptimal,
+            {blit}, vk::Filter::eLinear);
+
+        barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+        barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
+        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+        commandBuffer.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTransfer,
+            vk::PipelineStageFlagBits::eFragmentShader,
+            {}, {}, {}, barrier);
+
+        if (mipWidth > 1) mipWidth /= 2;
+        if (mipHeight > 1) mipHeight /= 2;
+    }
+
+    barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+    barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+    barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+    commandBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eFragmentShader,
+        {}, {}, {}, barrier);
 }
 
 }   // namespace vkutil

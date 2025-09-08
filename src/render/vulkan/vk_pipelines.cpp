@@ -1,4 +1,6 @@
-#include "pipelines.h"
+#include "vk_pipelines.h"
+
+#include "utils/logging.h"
 
 #include <fstream>
 
@@ -6,7 +8,7 @@ namespace {
 std::vector<char> readFile(const std::string& filename) {
     std::ifstream file (filename, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
-        throw std::runtime_error("Failed to open file!");
+        throw std::runtime_error("Failed to open file at " + filename);
     }
 
     const size_t fileSize = static_cast<size_t>(file.tellg());
@@ -23,8 +25,8 @@ std::vector<char> readFile(const std::string& filename) {
 namespace vkutil
 {
 
-vk::raii::ShaderModule loadShaderModule(const std::string& filePath,
-                                        const vk::raii::Device& device)
+vk::raii::ShaderModule loadShaderModule(const vk::raii::Device& device,
+                                        const std::string& filePath)
 {
     auto code = readFile(filePath);
 

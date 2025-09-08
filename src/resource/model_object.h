@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/glm_common.h"
-#include "core/types.h"
+#include "render/vulkan/vk_types.h"
 
 #include <vector>
 #include <limits>

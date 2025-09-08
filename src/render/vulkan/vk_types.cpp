@@ -1,6 +1,20 @@
-#include "types.h"
+#include "vk_types.h"
 
-#include "initializers.h"
+#include "vk_initializers.h"
+#include "utils/logging.h"
+
+#define VMA_IMPLEMENTATION
+#include <vma/vk_mem_alloc.h>
+
+#include <fstream>
+
+bool QueueFamilyIndices::isComplete() const {
+    return
+        graphicsFamily.has_value() &&
+        presentFamily.has_value() &&
+        computeFamily.has_value() &&
+        transferFamily.has_value();
+}
 
 MemoryAllocator::MemoryAllocator(const vk::Instance& instance,
                 const vk::PhysicalDevice& physicalDevice,
@@ -92,17 +106,18 @@ void AllocatedBuffer::unmap() {
     vmaUnmapMemory(allocator, allocation);
 }
 
-AllocatedImage::AllocatedImage(const vk::Device& device,
-                               VmaAllocator allocator,
-                               vk::Extent3D extent,
-                               uint32_t mipLevels,
-                               vk::SampleCountFlagBits numSamples,
-                               vk::Format format,
-                               vk::ImageTiling tiling,
-                               vk::ImageUsageFlags usage,
-                               MemoryType memoryType):
-    device(device), allocator(allocator)
-{
+AllocatedImage::AllocatedImage(
+        const vk::Device& device,
+        VmaAllocator allocator,
+        vk::Extent3D extent,
+        uint32_t mipLevels,
+        vk::SampleCountFlagBits numSamples,
+        vk::Format format,
+        vk::ImageTiling tiling,
+        vk::ImageUsageFlags usage,
+        vk::ImageAspectFlags aspectFlags,
+        MemoryType memoryType)
+    : device(device), allocator(allocator) {
     imageExtent = extent;
     imageFormat = format;
 
@@ -116,7 +131,7 @@ AllocatedImage::AllocatedImage(const vk::Device& device,
     }
     image = _image;
 
-    auto imageViewInfo = vkinit::imageViewCreateInfo(image, format, vk::ImageAspectFlagBits::eColor, mipLevels);
+    auto imageViewInfo = vkinit::imageViewCreateInfo(image, format, aspectFlags, mipLevels);
     imageView = device.createImageView(imageViewInfo);
 }
 
@@ -167,33 +182,59 @@ AllocatedImage::~AllocatedImage() {
     imageFormat = {};
 }
 
-vk::VertexInputBindingDescription Vertex::getBindingDescription() {
-    vk::VertexInputBindingDescription bindingDescription {
-        .binding = 0, // index of the binding in the array of bindings
-        .stride = sizeof(Vertex), // the number of bytes from one entry to the next
-        .inputRate = vk::VertexInputRate::eVertex
-    };
-
-    return bindingDescription;
-}
-
-std::array<vk::VertexInputAttributeDescription, 3> Vertex::getAttributeDescriptions() {
-    return {
-        vk::VertexInputAttributeDescription( 0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos) ),
-        vk::VertexInputAttributeDescription( 1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color) ),
-        vk::VertexInputAttributeDescription( 2, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texCoord) )
-    };
-}
-
-bool Vertex::operator==(const Vertex& other) const {
-    return
-        pos == other.pos &&
-        color == other.color &&
-        texCoord == other.texCoord;
-}
-
 namespace vkutil
 {
+
+QueueFamilyIndices findQueueFamilies(const vk::raii::PhysicalDevice& physicalDevice,
+                                     const vk::raii::SurfaceKHR& surface) {
+    QueueFamilyIndices indices;
+    const auto queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
+
+    // First pass: try to grab specialized queues (compute-only / transfer-only) while also
+    // recording graphics & present. We prefer dedicated queues to reduce contention.
+    for (uint32_t i = 0; i < queueFamilyProperties.size(); ++i) {
+        const auto& qfp = queueFamilyProperties[i];
+
+        bool graphicsSupport = (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != vk::QueueFlagBits{};
+        bool computeSupport  = (qfp.queueFlags & vk::QueueFlagBits::eCompute)  != vk::QueueFlagBits{};
+        bool transferSupport = (qfp.queueFlags & vk::QueueFlagBits::eTransfer) != vk::QueueFlagBits{};
+        VkBool32 presentSupport = physicalDevice.getSurfaceSupportKHR(i, surface);
+
+        // Record graphics family
+        if (!indices.graphicsFamily && graphicsSupport)
+            indices.graphicsFamily = i;
+
+        // Record present family
+        if (!indices.presentFamily && presentSupport)
+            indices.presentFamily = i;
+
+        // Prefer a compute-only queue (compute without graphics)
+        if (!indices.computeFamily && computeSupport && !graphicsSupport)
+            indices.computeFamily = i;
+
+        // Prefer a transfer-only queue (transfer without graphics)
+        if (!indices.transferFamily && transferSupport && !graphicsSupport && !computeSupport)
+            indices.transferFamily = i;
+
+        // Early out if everything already found
+        if (indices.isComplete())
+            break;
+    }
+
+    // If no dedicated compute, fallback to graphics (do NOT force different index just因为不同)
+    if (!indices.computeFamily && indices.graphicsFamily)
+        indices.computeFamily = indices.graphicsFamily;
+
+    // If no dedicated transfer, fallback likewise
+    if (!indices.transferFamily && indices.graphicsFamily)
+        indices.transferFamily = indices.graphicsFamily;
+
+    if (!indices.isComplete()) {
+        throw std::runtime_error("Failed to find required queue families (graphics/present/compute/transfer).");
+    }
+
+    return indices;
+}
 
 void copyAllocatedBuffer(const vk::raii::CommandBuffer& commandBuffer,
                          const AllocatedBuffer& src,

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/vk_common.h"
-#include "types.h"
+#include "vk_types.h"
 
 namespace vkinit
 {

@@ -1,4 +1,4 @@
-#include "descriptors.h"
+#include "vk_descriptors.h"
 
 void DescriptorLayoutBuilder::addBinding(
     uint32_t binding,
@@ -19,10 +19,9 @@ void DescriptorLayoutBuilder::clear() {
 }
 
 vk::raii::DescriptorSetLayout DescriptorLayoutBuilder::build(
-    const vk::raii::Device& device,
-    void* pNext,
-    vk::DescriptorSetLayoutCreateFlags flags
-) const {
+        const vk::raii::Device& device,
+        void* pNext,
+        vk::DescriptorSetLayoutCreateFlags flags) const {
     vk::DescriptorSetLayoutCreateInfo createInfo = {
         .pNext = pNext,
         .flags = flags,

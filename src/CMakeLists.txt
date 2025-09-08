@@ -13,6 +13,9 @@ target_compile_features(${TARGET} PRIVATE cxx_std_23)
 #     -fsanitize=address
 # )
 
+find_package(spdlog CONFIG REQUIRED)
+target_link_libraries(${TARGET} PRIVATE spdlog::spdlog)
+
 find_package(glfw3 CONFIG REQUIRED)
 target_link_libraries(${TARGET} PRIVATE glfw)
 

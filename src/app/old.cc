@@ -17,14 +17,30 @@
 #include <memory>
 #include <filesystem>
 
+struct EngineCapabilitiesSummary {
+    std::string gpuName;
+    uint32_t apiVersionMajor{};
+    uint32_t apiVersionMinor{};
+    uint32_t apiVersionPatch{};
+    vk::SampleCountFlagBits msaaSamples{};
+    uint32_t swapImageCount{};
+    vk::PresentModeKHR presentMode{};
+    vk::Format swapFormat{};
+    bool dynamicRendering{};
+    bool timelineSemaphores{};
+    bool sync2{};
+    bool profileSupported{};
+};
+
 
 class SoEngine {
 public:
     explicit SoEngine(const std::filesystem::path& path);
 
     void prepare(const Window* window);
+    void prepareCompute(const Window* window);
 
-    void update(float deltaTime);
+    void update(double deltaTime);
 
     [[nodiscard]] bool shouldTerminate() const;
 
@@ -46,6 +62,8 @@ private:
     AppInfo appInfo;
     std::filesystem::path appDir;
 
+    EngineCapabilitiesSummary capsSummary {};
+
     DeletionQueue       mainDeletionQueue;
     DeletionQueue       resourceDeletionQueue;
 
@@ -57,17 +75,15 @@ private:
     vk::raii::DebugUtilsMessengerEXT            debugMessenger { nullptr };
 
     std::unique_ptr<vk::raii::PhysicalDevice>   physicalDevice {};
-    vk::raii::Device                            device { nullptr };
+    std::unique_ptr<vk::raii::Device>           device { nullptr };
 
     MemoryAllocator     memoryAllocator {};
 
     QueueFamilyIndices  queueFamilyIndices {};
-    uint32_t        graphicsIndex {};
-    uint32_t        presentIndex {};
-    uint32_t        transferIndex {};
-    vk::raii::Queue graphicsQueue { nullptr };
-    vk::raii::Queue presentQueue { nullptr };
-    vk::raii::Queue transferQueue { nullptr };
+    vk::raii::Queue     graphicsQueue   { nullptr };
+    vk::raii::Queue     presentQueue    { nullptr };
+    vk::raii::Queue     computeQueue    { nullptr };
+    vk::raii::Queue     transferQueue   { nullptr };
 
     vk::SampleCountFlagBits msaaSamples { vk::SampleCountFlagBits::e1 };
 
@@ -83,10 +99,14 @@ private:
     std::vector<vk::raii::Framebuffer>  swapChainFramebuffers;
 
     DescriptorAllocator                 globalDescriptorAllocator {};
-    vk::raii::DescriptorSetLayout       drawImageDescriptorSetLayout { nullptr };
 
-    vk::raii::PipelineLayout            pipelineLayout { nullptr };
+    vk::raii::DescriptorSetLayout       drawImageDescriptorSetLayout { nullptr };
+    vk::raii::PipelineLayout            graphicsPipelineLayout { nullptr };
     vk::raii::Pipeline                  graphicsPipeline { nullptr };
+
+    vk::raii::DescriptorSetLayout       computeDescriptorSetLayout { nullptr };
+    vk::raii::PipelineLayout            computePipelineLayout { nullptr };
+    vk::raii::Pipeline                  computePipeline { nullptr };
 
     // Need more than one draw image for each frame in flight
     AllocatedImage  drawImage;
@@ -100,16 +120,19 @@ private:
 
     std::vector<Vertex>     vertices {};
     std::vector<uint32_t>   indices {};
-    // vk::raii::Buffer        vertexBuffer { nullptr };
-    // vk::raii::DeviceMemory  vertexBufferMemory { nullptr };
-    // vk::raii::Buffer        indexBuffer { nullptr };
-    // vk::raii::DeviceMemory  indexBufferMemory { nullptr };
     AllocatedBuffer     vertexBuffer;
     AllocatedBuffer     indexBuffer;
 
+    std::vector<vk::raii::DescriptorSet>   computeDescriptorSets;
+    std::vector<AllocatedBuffer> particleUniformBuffers;    // used for compute shaders
+    std::vector<AllocatedBuffer> shaderStorageBuffers;
+
     vk::raii::CommandPool                   graphicsCommandPool { nullptr };
+    vk::raii::CommandPool                   computeCommandPool  { nullptr };
     vk::raii::CommandPool                   transferCommandPool { nullptr };
 
+    vk::raii::Semaphore     semaphore   { nullptr };
+    uint64_t                timelineValue {0};
     std::vector<FrameData>      frames {};
     size_t      currentFrame {0};
 
@@ -128,12 +151,16 @@ private:
         "VK_KHR_portability_subset",
     #endif
         vk::KHRSwapchainExtensionName,
-        vk::KHRSpirv14ExtensionName,
-        vk::KHRCreateRenderpass2ExtensionName,
-        vk::KHRCopyCommands2ExtensionName
+        // vk::KHRSpirv14ExtensionName,
+        // vk::KHRCreateRenderpass2ExtensionName,
+        // vk::KHRCopyCommands2ExtensionName,
+        // vk::KHRBufferDeviceAddressExtensionName
     };
 
 private:
+    void buildCapabilitiesSummary();
+    void logCapabilitiesSummary() const;
+
     void cleanup();
     void cleanupSwapChain();
 
@@ -148,9 +175,13 @@ private:
     void createSwapChain();
 
     void initDescriptors();
+    void initComputeDescriptors();
     void createGraphicsPipeline();
+    void createComputePipeline();
+    void createGraphicsPipelineForCompute();
 
     void createCommandPool();
+    // void createComputeCommandBuffers();
 
     void createColorResources();
     void createDepthResources();
@@ -165,14 +196,19 @@ private:
     void setupModelObjects();
     void createVertexBuffer();
     void createIndexBuffer();
+    void createShaderStorageBuffers();
     void createUniformBuffers();
+    void createParticleUniformBuffers();
     void createDescriptorSets();
+    void createComputeDescriptorSets();
 
     void createFrameData();
 
-
     void updateUniformBuffer(uint32_t currentImage);
-    void drawFrame();
+    void updateParticleUniformBuffer(uint32_t currentImage, double deltaTime);
+    void drawFrame(double deltaTime);
+    void recordComputeCommandBuffer(const vk::raii::CommandBuffer& cmd);
+    void recordGraphicsCommandBuffer(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex);
     void drawBackground(const vk::raii::CommandBuffer& commandBuffer, uint32_t imageIndex);
 
     /**
@@ -184,7 +220,6 @@ private:
     [[nodiscard]] std::vector<const char*> getRequiredExtensions() const;
     void checkExtensionSupport(const std::vector<const char*>& requiredExtensions) const;
     uint32_t rateDeviceSuitability(const vk::raii::PhysicalDevice& device);
-    [[nodiscard]] QueueFamilyIndices findQueueFamilies(const vk::raii::PhysicalDevice& physicalDevice) const;
     [[nodiscard]] uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
     [[nodiscard]] vk::Format findSupportedFormat(
         const std::vector<vk::Format>& candidates,
@@ -221,4 +256,6 @@ private:
         int32_t texHeight,
         uint32_t mipLevels
     ) const;
+
+    void dumpAllocatedBuffer(const AllocatedBuffer& buffer, vk::DeviceSize bufferSize, const std::string& filename);
 };

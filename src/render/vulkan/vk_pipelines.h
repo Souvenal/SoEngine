@@ -11,7 +11,7 @@ namespace vkutil
  * @brief Creates a Vulkan shader module from a file.
  */
 [[nodiscard]]
-vk::raii::ShaderModule loadShaderModule(const std::string& filePath,
-                                        const vk::raii::Device& device);
+vk::raii::ShaderModule loadShaderModule(const vk::raii::Device& device,
+                                        const std::string& filePath);
 
 }   // namespace vkutil

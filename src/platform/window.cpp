@@ -1,7 +1,7 @@
 #include "window.h"
 
-#include "app/application.h"
-#include "window/input_events.h"
+#include "engine/so_engine.h"
+#include "input_events.h"
 
 #include <unordered_map>
 
@@ -12,13 +12,13 @@ void windowCloseCallback(GLFWwindow* window) {
 }
 
 void windowSizeCallback(GLFWwindow* window, int width, int height) {
-    if (auto* app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window))) {
-        app->resizeWindow(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+    if (auto* engine = reinterpret_cast<SoEngine*>(glfwGetWindowUserPointer(window))) {
+        engine->resizeWindow(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
     }
 }
 
 void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
-    if (auto* app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window))) {
+    if (auto* app = reinterpret_cast<SoEngine*>(glfwGetWindowUserPointer(window))) {
         app->resizeFramebuffer();
     }
 }
@@ -135,8 +135,8 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     KeyCode keyCode = translateKeyCode(key);
     KeyAction keyAction = translateKeyAction(action);
 
-    if (auto* app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window))) {
-        app->inputEvent(KeyInputEvent(keyCode, keyAction));
+    if (auto* engine = reinterpret_cast<SoEngine*>(glfwGetWindowUserPointer(window))) {
+        engine->inputEvent(KeyInputEvent(keyCode, keyAction));
     }
 }
 
@@ -157,8 +157,8 @@ MouseAction translateMouseAction(int action) {
 }
 
 void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
-    if (auto* app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window))) {
-        app->inputEvent(MouseButtonInputEvent{
+    if (auto* engine = reinterpret_cast<SoEngine*>(glfwGetWindowUserPointer(window))) {
+        engine->inputEvent(MouseButtonInputEvent{
             MouseButton::Unknown,
             MouseAction::Move,
             static_cast<float>(xpos),
@@ -167,11 +167,11 @@ void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
 }
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-    if (auto* app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window))) {
+    if (auto* engine = reinterpret_cast<SoEngine*>(glfwGetWindowUserPointer(window))) {
         double xPos, yPos;
         glfwGetCursorPos(window, &xPos, &yPos);
 
-        app->inputEvent(MouseButtonInputEvent{
+        engine->inputEvent(MouseButtonInputEvent{
             translateMouseButton(button),
             translateMouseAction(action),
             static_cast<float>(xPos),
@@ -181,7 +181,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 
 }   // namespace
 
-Window::Window(Application* app, const Properties& properties):
+Window::Window(SoEngine* engine, const Properties& properties):
     properties(properties)
 {
     // Initialize GLFW
@@ -209,7 +209,7 @@ Window::Window(Application* app, const Properties& properties):
 
     resize(properties.extent);
 
-    glfwSetWindowUserPointer(handle, app);
+    glfwSetWindowUserPointer(handle, engine);
 
     glfwSetWindowCloseCallback(handle, windowCloseCallback);
     glfwSetWindowSizeCallback(handle, windowSizeCallback);

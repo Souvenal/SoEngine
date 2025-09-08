@@ -4,8 +4,12 @@
     "glm",
     {
       "name": "ktx",
-      "features" : ["vulkan"]
+      "features": [
+        "vulkan"
+      ]
     },
-    "tinygltf"
+    "spdlog",
+    "tinygltf",
+    "fmt"
   ]
 }

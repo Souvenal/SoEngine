@@ -1,6 +1,6 @@
 #pragma once
 
-#include "types.h"
+#include "vk_types.h"
 
 namespace vkutil
 {
@@ -52,10 +52,34 @@ void transitionImageLayout(const vk::raii::CommandBuffer& commandBuffer,
 /**
  * @brief Copies an image to another image.
  */
-void copyImageToImage(const vk::raii::CommandBuffer& commandBuffer,
-                      vk::Image srcImage,
-                      vk::Image dstImage,
-                      const vk::Extent2D& srcSize,
-                      const vk::Extent2D& dstSize);
+void copyImageToImage(
+        const vk::raii::CommandBuffer& commandBuffer,
+        vk::Image srcImage,
+        vk::Image dstImage,
+        const vk::Extent2D& srcSize,
+        const vk::Extent2D& dstSize);
+
+/**
+ * @brief Copies a buffer to an image.
+ */
+void copyBufferToImage(
+        const vk::raii::CommandBuffer& commandBuffer,
+        const vk::raii::Buffer& buffer,
+        const vk::raii::Image& image,
+        uint32_t width,
+        uint32_t height);
+        
+/**
+ * @brief Generates mipmaps for a given image.
+ * @param commandBuffer A command buffer for image memory barriers and blits.
+ */
+void generateMipmaps(
+        const vk::raii::PhysicalDevice& physicalDevice,
+        const vk::raii::CommandBuffer& commandBuffer,
+        const vk::raii::Image& image,
+        vk::Format imageFormat,
+        int32_t texWidth,
+        int32_t texHeight,
+        uint32_t mipLevels);
 
 }   // namespace vkutil
