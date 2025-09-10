@@ -5,6 +5,16 @@ target_include_directories(${TARGET} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_sources(${TARGET} PUBLIC ${ALL_INCLUDES} ${ALL_SOURCES})
 
 target_compile_features(${TARGET} PRIVATE cxx_std_23)
+
+target_link_libraries(${TARGET} PRIVATE
+    spdlog
+    glfw
+    glm
+    tinygltf
+    ktx
+    imgui
+)
+
 # target_compile_options(${TARGET} PRIVATE
 #     -Wall
 #     -fsanitize=address
@@ -13,25 +23,25 @@ target_compile_features(${TARGET} PRIVATE cxx_std_23)
 #     -fsanitize=address
 # )
 
-find_package(spdlog CONFIG REQUIRED)
-target_link_libraries(${TARGET} PRIVATE spdlog::spdlog)
+# find_package(spdlog CONFIG REQUIRED)
+# target_link_libraries(${TARGET} PRIVATE spdlog::spdlog)
 
-find_package(glfw3 CONFIG REQUIRED)
-target_link_libraries(${TARGET} PRIVATE glfw)
+# find_package(glfw3 CONFIG REQUIRED)
+# target_link_libraries(${TARGET} PRIVATE glfw)
 
-find_package(glm CONFIG REQUIRED)
-target_link_libraries(${TARGET} PRIVATE glm::glm)
+# find_package(glm CONFIG REQUIRED)
+# target_link_libraries(${TARGET} PRIVATE glm::glm)
 
-find_package(Stb REQUIRED)
-target_include_directories(${TARGET} PRIVATE ${Stb_INCLUDE_DIR})
+# find_package(Stb REQUIRED)
+# target_include_directories(${TARGET} PRIVATE ${Stb_INCLUDE_DIR})
 
-find_path(TINYGLTF_INCLUDE_DIRS "tiny_gltf.h")
-target_include_directories(${TARGET} PRIVATE ${TINYGLTF_INCLUDE_DIRS})
+# find_path(TINYGLTF_INCLUDE_DIRS "tiny_gltf.h")
+# target_include_directories(${TARGET} PRIVATE ${TINYGLTF_INCLUDE_DIRS})
 
-find_package(Ktx CONFIG REQUIRED)
-target_link_libraries(${TARGET} PRIVATE KTX::ktx)
+# find_package(Ktx CONFIG REQUIRED)
+# target_link_libraries(${TARGET} PRIVATE KTX::ktx)
 
-find_package (Vulkan REQUIRED)
+# find_package (Vulkan REQUIRED)
 # set up Vulkan C++ module
 add_library(VulkanCppModule)
 add_library(Vulkan::cppm ALIAS VulkanCppModule)
@@ -43,14 +53,14 @@ target_compile_definitions(VulkanCppModule PUBLIC
     VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
 )
 target_include_directories(VulkanCppModule
-    PUBLIC
+    PRIVATE
     "${Vulkan_INCLUDE_DIR}"
 )
-target_include_directories(${TARGET} PRIVATE
-    Vulkan::Headers
-)
+# target_include_directories(${TARGET} BEFORE PRIVATE
+#     Vulkan::Headers
+# )
 target_link_libraries(VulkanCppModule
-    PUBLIC
+    PRIVATE
     Vulkan::Vulkan
 )
 
@@ -66,3 +76,6 @@ target_sources(VulkanCppModule
 )
 
 target_link_libraries(${TARGET} PUBLIC Vulkan::cppm)
+
+# find_package(imgui CONFIG REQUIRED)
+# target_link_libraries(${TARGET} PRIVATE imgui::imgui)

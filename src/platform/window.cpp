@@ -270,3 +270,7 @@ Window::Extent Window::getFramebufferSize() const {
 Window::Extent Window::getWindowSize() const {
     return properties.extent;
 }
+
+GLFWwindow* Window::getGLFWwindow() const noexcept {
+    return handle;
+}

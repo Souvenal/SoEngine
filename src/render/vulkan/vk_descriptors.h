@@ -43,6 +43,8 @@ public:
 									 const vk::raii::DescriptorSetLayout& layout,
 									 const uint32_t layoutCount = 1);
 
+	vk::DescriptorPool getPool() const;
+
 private:
 	vk::raii::DescriptorPool pool	{ nullptr };
 };

@@ -34,7 +34,15 @@ public:
      */
     void mainLoopFrame();
 
+    /**
+     * @brief Updates the application state (called once per frame)
+     */
     void update();
+
+    /**
+     * @brief Renders the application (called once per frame)
+     */
+    void render();
 
     /**
      * @brief Terminates the application

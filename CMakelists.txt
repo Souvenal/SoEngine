@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 4.0)
 if (APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET 26.0)
 endif()
-project(learn_vulkan LANGUAGES CXX VERSION 1.0.0)
+project(learn_vulkan LANGUAGES C CXX VERSION 1.0.0)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,6 +16,8 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${TARGET_DIR}/lib)
 
 add_executable(${TARGET})
 
+find_package(Vulkan REQUIRED)
+add_subdirectory(3rdparty)
 add_subdirectory(src)
 
 add_subdirectory(shaders)

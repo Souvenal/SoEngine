@@ -2,7 +2,10 @@
 
 #include "render/vulkan/vk_utils.h"
 
+#include <map>
 #include <fstream>
+#include <ranges>
+#include <algorithm>
 
 namespace {
 
@@ -23,23 +26,23 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
 void AppInfo::checkFeatureSupport(
         vk::Instance instance,
         vk::PhysicalDevice physicalDevice) {
-    VkBool32 supported = VK_FALSE;
-    VkResult result = vpGetPhysicalDeviceProfileSupport(
-        instance,
-        physicalDevice,
-        &profile,
-        &supported
-    );
+    // VkBool32 supported = VK_FALSE;
+    // VkResult result = vpGetPhysicalDeviceProfileSupport(
+    //     instance,
+    //     physicalDevice,
+    //     &profile,
+    //     &supported
+    // );
 
-    if (result == VK_SUCCESS && supported == VK_TRUE) {
-        profileSupported = true;
-        // std::println("Using KHR roadmap 2022 profile");
-    } else {
-        profileSupported = false;
-        // std::println("Fall back to traditional rendering (profile not supported)");
+    // if (result == VK_SUCCESS && supported == VK_TRUE) {
+    //     profileSupported = true;
+    //     // std::println("Using KHR roadmap 2022 profile");
+    // } else {
+    //     profileSupported = false;
+    //     // std::println("Fall back to traditional rendering (profile not supported)");
 
-        detectFeatureSupport(physicalDevice);
-    }
+    detectFeatureSupport(physicalDevice);
+    // }
 }
 
 void AppInfo::detectFeatureSupport(vk::PhysicalDevice physicalDevice) {
@@ -102,7 +105,33 @@ Application::Application(const std::filesystem::path& appDir, const AppInfo& app
 Application::~Application() { }
 
 void Application::onUpdate(double deltaTime) {
-    drawFrame(deltaTime);
+}
+
+void Application::onRender() {
+    drawFrame();
+}
+
+void Application::onInit(const Window* window) {
+    this->window = window;
+
+    initInstance("Default Application");
+    initDebugMessenger();
+    initSurface();
+    selectPhysicalDevice();
+    initLogicalDevice();
+
+    initMemoryAllocator();
+    initSwapchain();
+
+    initCommandPools();
+    // initCommandBuffers();
+
+    initDescriptorAllocator();
+    initGraphicsPipeline();
+
+    initSyncObjects();
+
+    initImGui();
 }
 
 void Application::onInputEvent(const InputEvent& event) {
@@ -125,16 +154,16 @@ bool Application::shouldTerminate() const {
     return false;
 }
 
-bool Application::isSwapChainOutOfDate() const {
-    return swapChainOutOfDate;
+bool Application::isSwapchainOutOfDate() const {
+    return swapchainOutOfDate;
 }
 
-void Application::recreateSwapChain() {
-    ASSERT(device, "Logical device must be created before recreating swap chain");
+void Application::recreateSwapchain() {
+    ASSERT(device, "Logical device must be created before recreating swapchain");
     device->waitIdle();
-    cleanupSwapChain();
+    cleanupSwapchain();
 
-    initSwapChain();
+    initSwapchain();
     // createFramebuffers();
 }
 
@@ -167,6 +196,9 @@ void Application::initInstance(const std::string& appName) {
 }
 
 void Application::initDebugMessenger() {
+#ifndef NDEBUG
+    return;
+#endif
     // Only used if validation layers are enabled via vkconfig
     vk::DebugUtilsMessageSeverityFlagsEXT severityFlags {
         vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
@@ -186,6 +218,17 @@ void Application::initDebugMessenger() {
     debugMessenger = instance->createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT);
 
     LOG_CORE_DEBUG("Debug messenger is successfully initialized");
+}
+
+void Application::initSurface() {
+    ASSERT(window, "Window must be initialized before creating surface");
+
+    surface = window->createSurface(*instance);
+    auto framebufferSize = window->getFramebufferSize();
+    swapchainExtent = vk::Extent2D { framebufferSize.width, framebufferSize.height };
+    windowExtent = window->getWindowSize();
+
+    LOG_CORE_DEBUG("Vulkan surface is successfully created");
 }
 
 void Application::selectPhysicalDevice() {
@@ -210,10 +253,10 @@ void Application::selectPhysicalDevice() {
     
     physicalDevice = std::make_unique<vk::raii::PhysicalDevice>(candidates.rbegin()->second);
 
+    appInfo.msaaSamples = vkutil::getMaxUsableSampleCount(*physicalDevice);
+
     LOG_CORE_DEBUG("Physical device is successfully selected");
 }
-
-
 
 void Application::initLogicalDevice() {
     vk::StructureChain<
@@ -239,26 +282,26 @@ void Application::initMemoryAllocator() {
     LOG_CORE_DEBUG("Memory allocator is successfully initialized");
 }
 
-void Application::initSwapChain() {
-    swapChainImageFormat = vkutil::chooseSurfaceFormat(
+void Application::initSwapchain() {
+    swapchainImageFormat = vkutil::chooseSurfaceFormat(
         physicalDevice->getSurfaceFormatsKHR(*surface)
     );
     auto surfaceCapabilities = physicalDevice->getSurfaceCapabilitiesKHR(*surface);
     if (surfaceCapabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
-        swapChainExtent = surfaceCapabilities.currentExtent;
+        swapchainExtent = surfaceCapabilities.currentExtent;
     }
     // else the surface size is undefined on some platforms
     // use default extent as set before
-    auto minImageCount = std::max( 3u, surfaceCapabilities.minImageCount );
-    minImageCount = ( surfaceCapabilities.maxImageCount > 0 && minImageCount > surfaceCapabilities.maxImageCount ) ?
-        surfaceCapabilities.maxImageCount : minImageCount;
+    minImageCountInSwapchain = std::max( 3u, surfaceCapabilities.minImageCount );
+    minImageCountInSwapchain = ( surfaceCapabilities.maxImageCount > 0 && minImageCountInSwapchain > surfaceCapabilities.maxImageCount ) ?
+        surfaceCapabilities.maxImageCount : minImageCountInSwapchain;
 
     vk::SwapchainCreateInfoKHR createInfo {
         .surface = surface,
-        .minImageCount = minImageCount,
-        .imageFormat = swapChainImageFormat,
+        .minImageCount = minImageCountInSwapchain,
+        .imageFormat = swapchainImageFormat,
         .imageColorSpace = vk::ColorSpaceKHR::eSrgbNonlinear,
-        .imageExtent = swapChainExtent,
+        .imageExtent = swapchainExtent,
         .imageArrayLayers = 1,  // the amount of layers each image consists of, always 1 unless developing a stereoscopic 3D app
         .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,   // operations using the images in the swap chain for
         .preTransform = surfaceCapabilities.currentTransform,
@@ -285,13 +328,13 @@ void Application::initSwapChain() {
         createInfo.pQueueFamilyIndices = queueFamilyIndices;
     }
 
-    swapChain = vk::raii::SwapchainKHR(*device, createInfo);
-    swapChainImages = swapChain.getImages();
+    swapchain = vk::raii::SwapchainKHR(*device, createInfo);
+    swapchainImages = swapchain.getImages();
 
     // Create swap chain image views
     vk::ImageViewCreateInfo imageViewCreateInfo{
         .viewType = vk::ImageViewType::e2D,
-        .format = swapChainImageFormat,
+        .format = swapchainImageFormat,
         .components = {
             vk::ComponentSwizzle::eIdentity,
             vk::ComponentSwizzle::eIdentity,
@@ -306,9 +349,9 @@ void Application::initSwapChain() {
             .layerCount = 1
         }
     };
-    for (const auto& image : swapChainImages) {
+    for (const auto& image : swapchainImages) {
         imageViewCreateInfo.image = image;
-        swapChainImageViews.emplace_back(*device, imageViewCreateInfo);
+        swapchainImageViews.emplace_back(*device, imageViewCreateInfo);
     }
 
     LOG_CORE_DEBUG("Swap chain is successfully created");
@@ -351,6 +394,14 @@ void Application::initRenderPass() { }
 
 void Application::initFramebuffers() { }
 
+void Application::initDescriptorAllocator() {
+    std::vector<DescriptorAllocator::PoolSizeRatio> sizes {
+        { vk::DescriptorType::eCombinedImageSampler, IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE }
+    };
+
+    globalDescriptorAllocator = DescriptorAllocator(*device, appInfo.maxFramesInFlight, sizes);
+}
+
 void Application::initSyncObjects() {
     vk::SemaphoreTypeCreateInfo semaphoreTypeCreateInfo{
         .semaphoreType = vk::SemaphoreType::eTimeline,
@@ -368,6 +419,48 @@ void Application::initSyncObjects() {
     LOG_CORE_DEBUG("Synchronization objects are successfully initialized");
 }
 
+void Application::initImGui() {
+    // this initializes the core structures of imgui
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    // io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
+    // io.ConfigViewportsNoAutoMerge = true;
+    // io.ConfigViewportsNoTaskBarIcon = true;
+
+    ImGui::StyleColorsDark();
+
+    // this initializes imgui for glfw
+    ImGui_ImplGlfw_InitForVulkan(window->getGLFWwindow(), true);
+    ImGui_ImplVulkan_InitInfo initInfo {
+        .Instance = **instance,
+        .PhysicalDevice = **physicalDevice,
+        .Device = **device,
+        .QueueFamily = queueFamilyIndices.graphicsFamily.value(),
+        .Queue = *graphicsQueue,
+        .DescriptorPool = globalDescriptorAllocator.getPool(),
+        .MinImageCount = minImageCountInSwapchain,
+        .ImageCount = static_cast<uint32_t>(swapchainImages.size()),
+        .MSAASamples = VkSampleCountFlagBits(vk::SampleCountFlagBits::e1),
+        .UseDynamicRendering = true,
+        .PipelineRenderingCreateInfo = pipelineRenderingCreateInfo,
+        .CheckVkResultFn = [](VkResult err) {
+            if (err != VK_SUCCESS) {
+                LOG_CORE_ERROR("Vulkan error during ImGui initialization: {}", vk::to_string(vk::Result(err)));
+            }
+        }};
+
+    ImGui_ImplVulkan_Init(&initInfo);
+
+    // Load fonts
+    // ImGui_ImplVulkan_CreateFontsTexture(commandBuffer);
+    // submit
+    // ImGui_ImplVulkan_DestroyFontUploadObjects();
+}
+
 void Application::buildCapabilitiesSummary() {
     auto props = physicalDevice->getProperties();
     capsSummary.gpuName.assign(
@@ -377,13 +470,13 @@ void Application::buildCapabilitiesSummary() {
     capsSummary.apiVersionMajor = vk::apiVersionMajor(props.apiVersion);
     capsSummary.apiVersionMinor = vk::apiVersionMinor(props.apiVersion);
     capsSummary.apiVersionPatch = vk::apiVersionPatch(props.apiVersion);
-    capsSummary.swapImageCount = static_cast<uint32_t>(swapChainImages.size());
+    capsSummary.swapImageCount = static_cast<uint32_t>(swapchainImages.size());
     capsSummary.presentMode = vkutil::chooseSwapPresentMode(physicalDevice->getSurfacePresentModesKHR(*surface));
-    capsSummary.swapFormat = swapChainImageFormat;
-    capsSummary.dynamicRendering = appInfo.dynamicRenderingSupported || appInfo.profileSupported;
+    capsSummary.swapFormat = swapchainImageFormat;
+    capsSummary.dynamicRendering = appInfo.dynamicRenderingSupported;
     capsSummary.timelineSemaphores = appInfo.timelineSemaphoresSupported;
     capsSummary.sync2 = appInfo.synchronization2Supported;
-    capsSummary.profileSupported = appInfo.profileSupported;
+    // capsSummary.profileSupported = appInfo.profileSupported;
 }
 
 void Application::logCapabilitiesSummary() const {
@@ -404,13 +497,13 @@ void Application::logCapabilitiesSummary() const {
 }
 
 void Application::cleanup() {
-    cleanupSwapChain();
+    cleanupSwapchain();
     mainDeletionQueue.flush();
 }
 
-void Application::cleanupSwapChain() {
-    swapChainImageViews.clear();
-    swapChain = nullptr;
+void Application::cleanupSwapchain() {
+    swapchainImageViews.clear();
+    swapchain = nullptr;
     resourceDeletionQueue.flush();
 }
 
@@ -440,6 +533,8 @@ std::vector<const char*> Application::getRequiredExtensions() const {
     const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
     std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
+// In release mode, do not include debug utils extension
+#ifdef NDEBUG
     // Check if debug utils extension is available
     auto props = context.enumerateInstanceExtensionProperties();
     bool debugUtilsAvailable = std::ranges::any_of(props,
@@ -453,6 +548,7 @@ std::vector<const char*> Application::getRequiredExtensions() const {
     } else {
         LOG_CORE_WARN("VK_EXT_debug_utils extension not available. Validation layers may not work.");
     }
+#endif
 
 #ifdef __APPLE__
     extensions.emplace_back(vk::KHRPortabilityEnumerationExtensionName);

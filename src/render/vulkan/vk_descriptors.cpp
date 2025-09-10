@@ -32,10 +32,10 @@ vk::raii::DescriptorSetLayout DescriptorLayoutBuilder::build(
     return device.createDescriptorSetLayout(createInfo);
 }
 
-DescriptorAllocator::DescriptorAllocator(const vk::raii::Device& device,
-	uint32_t maxSets,
-	std::span<PoolSizeRatio> poolSizeRatios
-) {
+DescriptorAllocator::DescriptorAllocator(
+        const vk::raii::Device& device,
+        uint32_t maxSets,
+        std::span<PoolSizeRatio> poolSizeRatios) {
 	// Create the descriptor pool
 	std::vector<vk::DescriptorPoolSize> sizes;
 	sizes.reserve(poolSizeRatios.size());
@@ -73,4 +73,8 @@ std::vector<vk::raii::DescriptorSet> DescriptorAllocator::allocate(
     };
 
     return device.allocateDescriptorSets(allocInfo);
+}
+
+vk::DescriptorPool DescriptorAllocator::getPool() const {
+    return *pool;
 }

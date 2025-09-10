@@ -9,17 +9,17 @@
 #include "utils/type_traits.h"
 #include "common/error.h"
 
-#include <vulkan/vulkan_profiles.hpp>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
 
+#include <set>
 #include <memory>
 #include <filesystem>
 
 struct AppInfo {
     const uint32_t maxFramesInFlight { 2 };
-    bool profileSupported {false};
-    VpProfileProperties profile{
-        VP_KHR_ROADMAP_2022_NAME,
-        VP_KHR_ROADMAP_2022_SPEC_VERSION};
+    vk::SampleCountFlags msaaSamples { vk::SampleCountFlagBits::e1 };
     bool dynamicRenderingSupported      { false };
     bool timelineSemaphoresSupported    { false };
     bool synchronization2Supported      { false };
@@ -61,25 +61,28 @@ public:
     explicit Application(const std::filesystem::path& appDir);
     explicit Application(const std::filesystem::path& appDir, const AppInfo& appInfo);
     virtual ~Application() = 0;
-    virtual void onInit(const Window* window) = 0;
-    virtual void onUpdate(double deltaTime) = 0;
-    // virtual void onRender() = 0;
+    virtual void onInit(const Window* window);
+    virtual void onUpdate(double deltaTime);
+    virtual void onRender();
     virtual void onInputEvent(const InputEvent& event);
     virtual void onShutdown();
 
     [[nodiscard]] virtual bool shouldTerminate() const;
-    [[nodiscard]] virtual bool isSwapChainOutOfDate() const;
+    [[nodiscard]] virtual bool isSwapchainOutOfDate() const;
 
     /**
      * @brief Recreates the swap chain
      * @note Should be called when the swap chain becomes outdated (e.g., due to window resizing)
      */
-    virtual void recreateSwapChain();
+    virtual void recreateSwapchain();
 
 protected:
 
     std::filesystem::path appDir;
     AppInfo appInfo;
+
+    const Window* window  { nullptr };
+    ImGui_ImplVulkanH_Window* imguiWindow { nullptr };
 
     AppCapabilitiesSummary capsSummary {};
 
@@ -104,12 +107,13 @@ protected:
 
     MemoryAllocator         memoryAllocator {};
 
-    vk::raii::SwapchainKHR              swapChain { nullptr };
-    std::vector<vk::Image>              swapChainImages;
-    std::vector<vk::raii::ImageView>    swapChainImageViews;
-    vk::Format                          swapChainImageFormat {};
-    vk::Extent2D                        swapChainExtent;
-    bool                                swapChainOutOfDate {false};
+    uint32_t    minImageCountInSwapchain {0};
+    vk::raii::SwapchainKHR              swapchain { nullptr };
+    std::vector<vk::Image>              swapchainImages;
+    std::vector<vk::raii::ImageView>    swapchainImageViews;
+    vk::Format                          swapchainImageFormat {};
+    vk::Extent2D                        swapchainExtent;
+    bool                                swapchainOutOfDate {false};
 
     // Traditional render pass (fallback for non-dynamic rendering)
     vk::raii::RenderPass                renderPass { nullptr };
@@ -118,6 +122,7 @@ protected:
     // AllocatedImage  drawImage;
 
     vk::raii::PipelineLayout            graphicsPipelineLayout { nullptr };
+    vk::PipelineRenderingCreateInfoKHR  pipelineRenderingCreateInfo {};
     vk::raii::Pipeline                  graphicsPipeline { nullptr };
 
     vk::raii::CommandPool                   graphicsCommandPool { nullptr };
@@ -146,6 +151,11 @@ protected:
      *       and before any Vulkan objects are created
      */
     virtual void initDebugMessenger();
+
+    /**
+     * @brief Initializes the Vulkan surface for rendering
+     */
+    virtual void initSurface();
     
     /**
      * @brief Selects a physical device (GPU) that supports the required features and extensions
@@ -177,7 +187,7 @@ protected:
     /**
      * @brief Initializes the swap chain images and image views
      */
-    virtual void initSwapChain();
+    virtual void initSwapchain();
 
     /**
      * @brief Initializes the command pools for graphics, compute, and transfer operations
@@ -204,15 +214,20 @@ protected:
     virtual void initFramebuffers();
 
     /**
+     * @brief Initializes the descriptor allocator for managing Vulkan descriptor sets
+     */
+    virtual void initDescriptorAllocator();
+
+    /**
+     * @brief Initializes the descriptor set layouts
+     */
+    virtual void initDescriptorSetLayouts() = 0;
+
+    /**
      * @brief Initializes the graphics pipeline
      * @note This function should set up the pipeline layout and create the graphics pipeline
      */
     virtual void initGraphicsPipeline() = 0;
-
-    /**
-     * @brief Initializes the descriptor allocator for managing Vulkan descriptor sets
-     */
-    virtual void initDescriptorAllocator() = 0;
 
     /**
      * @brief Initializes the descriptor sets
@@ -223,6 +238,8 @@ protected:
      * @brief Initializes synchronization objects (semaphores and fences)
      */
     virtual void initSyncObjects();
+
+    virtual void initImGui();
 
     /**
      * @brief Builds and a summary of the application's capabilities
@@ -237,7 +254,7 @@ protected:
     /**
      * @brief Draws a single frame
      */
-    virtual void drawFrame(double deltaTime) = 0;
+    virtual void drawFrame() = 0;
 
     /**
      * @brief Records commands into the graphics command buffer for the current frame
@@ -253,7 +270,7 @@ protected:
     /**
      * @brief Cleans up swap chain related resources
      */
-    virtual void cleanupSwapChain();
+    virtual void cleanupSwapchain();
 
     /**
      * Helper functions

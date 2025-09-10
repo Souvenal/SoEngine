@@ -51,6 +51,7 @@ public:
 
     [[nodiscard]] Extent getFramebufferSize() const;
     [[nodiscard]] Extent getWindowSize() const;
+    [[nodiscard]] GLFWwindow* getGLFWwindow() const noexcept;
 
 private:
     Properties  properties  {};

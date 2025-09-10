@@ -34,8 +34,8 @@ void ComputeApp::onInit(const Window* window) {
     // initDebugMessenger();
     surface = window->createSurface(*instance);        // influence physical device selection
     auto framebufferSize = window->getFramebufferSize();
-    swapChainExtent.width = framebufferSize.width;
-    swapChainExtent.height = framebufferSize.height;
+    swapchainExtent.width = framebufferSize.width;
+    swapchainExtent.height = framebufferSize.height;
     windowExtent = window->getWindowSize();
 
     selectPhysicalDevice();
@@ -44,7 +44,7 @@ void ComputeApp::onInit(const Window* window) {
 
     initLogicalDevice();
     initMemoryAllocator();
-    initSwapChain();
+    initSwapchain();
 
     initCommandPools();
     initCommandBuffers();
@@ -63,7 +63,6 @@ void ComputeApp::onInit(const Window* window) {
 
     initUniformBuffers();
     initShaderStorageBuffers();
-    initDescriptorAllocator();
     initDescriptorSets();
 
     initSyncObjects();
@@ -75,7 +74,11 @@ void ComputeApp::onInit(const Window* window) {
 }
 
 void ComputeApp::onUpdate(double deltaTime) {
-    drawFrame(deltaTime);
+    updateUniformBuffer(deltaTime);
+}
+
+void ComputeApp::onRender() {
+    drawFrame();
 }
 
 void ComputeApp::onShutdown() {
@@ -232,7 +235,7 @@ void ComputeApp::initGraphicsPipeline() {
 
     vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo {
         .colorAttachmentCount = 1,
-        .pColorAttachmentFormats = &swapChainImageFormat,
+        .pColorAttachmentFormats = &swapchainImageFormat,
     };
     vk::GraphicsPipelineCreateInfo pipelineInfo {
         .pNext = &pipelineRenderingCreateInfo,
@@ -358,9 +361,9 @@ void ComputeApp::initDescriptorSets() {
     LOG_CORE_DEBUG("Compute descriptor sets are successfully initialized");
 }
 
-void ComputeApp::drawFrame(double deltaTime) {
+void ComputeApp::drawFrame() {
     // Acquire an image from the swap chain
-    auto [result, imageIndex] = swapChain.acquireNextImage(
+    auto [result, imageIndex] = swapchain.acquireNextImage(
         UINT64_MAX, nullptr, inFlightFences[currentFrame]);
     while (vk::Result::eTimeout == device->waitForFences(
         {inFlightFences[currentFrame]}, vk::True,
@@ -369,7 +372,7 @@ void ComputeApp::drawFrame(double deltaTime) {
     
     if (result == vk::Result::eErrorOutOfDateKHR) {
         LOG_CORE_WARN("Swap chain is out of date during image acquisition. Recreating swap chain...");
-        swapChainOutOfDate = true;
+        swapchainOutOfDate = true;
         return;
     } else if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
         throw std::runtime_error("Failed to acquire swap chain image!");
@@ -382,8 +385,6 @@ void ComputeApp::drawFrame(double deltaTime) {
     uint64_t computeSignalValue = ++timelineValue;
     uint64_t graphicsWaitValue = computeSignalValue;
     uint64_t graphicsSignalValue = ++timelineValue;
-
-    updateUniformBuffer(deltaTime);
 
     // Compute Task
     {
@@ -459,7 +460,7 @@ void ComputeApp::drawFrame(double deltaTime) {
             .waitSemaphoreCount = 0,
             .pWaitSemaphores = nullptr,
             .swapchainCount = 1,
-            .pSwapchains = &*swapChain,
+            .pSwapchains = &*swapchain,
             .pImageIndices = &imageIndex,
             .pResults = nullptr, // To check multiple swap chains' results
         };
@@ -467,7 +468,7 @@ void ComputeApp::drawFrame(double deltaTime) {
         if (result == vk::Result::eErrorOutOfDateKHR ||
             result == vk::Result::eSuboptimalKHR) {
             LOG_CORE_WARN("Swap chain is out of date or suboptimal during presentation. Recreating swap chain...");
-            recreateSwapChain();
+            recreateSwapchain();
         } else if (result != vk::Result::eSuccess) {
             throw std::runtime_error("Failed to present swap chain image!");
         }
@@ -499,34 +500,34 @@ void ComputeApp::recordGraphicsCommandBuffer(uint32_t imageIndex) {
     commandBuffer.begin( {} );
     // Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
     vkutil::transitionImageLayout(commandBuffer,
-        swapChainImages[imageIndex],
+        swapchainImages[imageIndex],
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eColorAttachmentOptimal
     );
     vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
     vk::RenderingAttachmentInfo attachmentInfo = {
-        .imageView = swapChainImageViews[imageIndex],
+        .imageView = swapchainImageViews[imageIndex],
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = vk::AttachmentStoreOp::eStore,
         .clearValue = clearColor
     };
     vk::RenderingInfo renderingInfo = {
-        .renderArea = { .offset = { 0, 0 }, .extent = swapChainExtent },
+        .renderArea = { .offset = { 0, 0 }, .extent = swapchainExtent },
         .layerCount = 1,
         .colorAttachmentCount = 1,
         .pColorAttachments = &attachmentInfo
     };
     commandBuffer.beginRendering(renderingInfo);
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
-    commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
-    commandBuffer.setScissor( 0, vk::Rect2D( vk::Offset2D( 0, 0 ), swapChainExtent ) );
+    commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapchainExtent.width), static_cast<float>(swapchainExtent.height), 0.0f, 1.0f));
+    commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapchainExtent));
     commandBuffer.bindVertexBuffers(0, { shaderStorageBuffers[currentFrame].buffer }, {0});
     commandBuffer.draw( computeAppInfo.particleCount, 1, 0, 0 );
     commandBuffer.endRendering();
     // After rendering, transition the swapchain image to PRESENT_SRC
     vkutil::transitionImageLayout(commandBuffer,
-        swapChainImages[imageIndex],
+        swapchainImages[imageIndex],
         vk::ImageLayout::eColorAttachmentOptimal,
         vk::ImageLayout::ePresentSrcKHR
     );

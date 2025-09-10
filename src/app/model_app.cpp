@@ -51,8 +51,8 @@ void ModelApp::onInit(const Window* window) {
     initDebugMessenger();
     surface = window->createSurface(*instance);        // influence physical device selection
     auto framebufferSize = window->getFramebufferSize();
-    swapChainExtent.width = framebufferSize.width;
-    swapChainExtent.height = framebufferSize.height;
+    swapchainExtent.width = framebufferSize.width;
+    swapchainExtent.height = framebufferSize.height;
     windowExtent = window->getWindowSize();
 
     selectPhysicalDevice();
@@ -63,21 +63,21 @@ void ModelApp::onInit(const Window* window) {
     initLogicalDevice();
     
     initMemoryAllocator();
-    initSwapChain();
+    initSwapchain();
 
     initCommandPools();
     initCommandBuffers();
 
-    if (!appInfo.profileSupported && !appInfo.dynamicRenderingSupported) {
+    if (!appInfo.dynamicRenderingSupported) {
         initRenderPass();
     }
     initDescriptorAllocator();
-    initDescriptorSetLayout();
+    initDescriptorSetLayouts();
     initGraphicsPipeline();
 
     initColorResources();
     initDepthResources();
-    if (!appInfo.profileSupported && !appInfo.dynamicRenderingSupported) {
+    if (!appInfo.dynamicRenderingSupported) {
         initFramebuffers();
     }
 
@@ -104,19 +104,23 @@ void ModelApp::onInit(const Window* window) {
 }
 
 void ModelApp::onUpdate(double deltaTime) {
-    drawFrame(deltaTime);
+    updateUniformBuffer(deltaTime);
+}
+
+void ModelApp::onRender() {
+    drawFrame();
 }
 
 void ModelApp::onShutdown() {
     Application::onShutdown();
 }
 
-void ModelApp::recreateSwapChain() {
+void ModelApp::recreateSwapchain() {
     ASSERT(device, "Logical device must be created before recreating swap chain");
     device->waitIdle();
-    cleanupSwapChain();
+    cleanupSwapchain();
 
-    initSwapChain();
+    initSwapchain();
     initColorResources();
     initDepthResources();
     // createFramebuffers();
@@ -137,13 +141,8 @@ void ModelApp::initCommandBuffers() {
 }
 
 void ModelApp::initRenderPass() {
-    if (appInfo.profileSupported) {
-        LOG_CORE_INFO("Using dynamic rendering, skipping render pass creation.");
-        return;
-    }
-
     vk::AttachmentDescription colorAttachment {
-        .format = swapChainImageFormat,
+        .format = swapchainImageFormat,
         .samples = modelAppInfo.msaaSamples,
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = vk::AttachmentStoreOp::eStore,
@@ -175,7 +174,7 @@ void ModelApp::initRenderPass() {
     };
 
     vk::AttachmentDescription colorAttachmentResolve {
-        .format = swapChainImageFormat,
+        .format = swapchainImageFormat,
         .samples = vk::SampleCountFlagBits::e1,
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = vk::AttachmentStoreOp::eStore,
@@ -233,8 +232,8 @@ void ModelApp::initRenderPass() {
 
 void ModelApp::initDescriptorAllocator() {
     std::vector<DescriptorAllocator::PoolSizeRatio> sizes = {
-        { vk::DescriptorType::eUniformBuffer, 1 },
-        { vk::DescriptorType::eCombinedImageSampler, 1 }};
+        { vk::DescriptorType::eUniformBuffer, 1.0f },
+        { vk::DescriptorType::eCombinedImageSampler, 1.0f }};
     globalDescriptorAllocator = DescriptorAllocator(
         *device,
         modelAppInfo.maxObjects * appInfo.maxFramesInFlight,
@@ -243,7 +242,7 @@ void ModelApp::initDescriptorAllocator() {
     LOG_CORE_DEBUG("Descriptor allocator is successfully initialized");
 }
 
-void ModelApp::initDescriptorSetLayout() {
+void ModelApp::initDescriptorSetLayouts() {
     DescriptorLayoutBuilder builder;
     builder.addBinding(0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex);
     builder.addBinding(1, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment);
@@ -407,7 +406,7 @@ void ModelApp::initGraphicsPipeline() {
 
     vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo {
         .colorAttachmentCount = 1,
-        .pColorAttachmentFormats = &swapChainImageFormat,
+        .pColorAttachmentFormats = &swapchainImageFormat,
         .depthAttachmentFormat = vkutil::findDepthFormat(*physicalDevice),
     };
 
@@ -430,7 +429,7 @@ void ModelApp::initGraphicsPipeline() {
     };
 
     // Dynamic rendering
-    if (appInfo.profileSupported || appInfo.dynamicRenderingSupported) {
+    if (appInfo.dynamicRenderingSupported) {
         LOG_CORE_DEBUG("Configuring pipeline for dynamic rendering");
         pipelineInfo.pNext = &pipelineRenderingCreateInfo,
         pipelineInfo.renderPass = nullptr;
@@ -447,9 +446,9 @@ void ModelApp::initGraphicsPipeline() {
 }
 
 void ModelApp::initColorResources() {
-    vk::Format colorFormat = swapChainImageFormat;
+    vk::Format colorFormat = swapchainImageFormat;
     colorImage = AllocatedImage(*device, memoryAllocator.allocator,
-        {swapChainExtent.width, swapChainExtent.height, 1},
+        {swapchainExtent.width, swapchainExtent.height, 1},
         1, modelAppInfo.msaaSamples,
         colorFormat, vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
@@ -462,7 +461,7 @@ void ModelApp::initColorResources() {
 void ModelApp::initDepthResources() {
     vk::Format depthFormat = vkutil::findDepthFormat(*physicalDevice);
     depthImage = AllocatedImage(*device, memoryAllocator.allocator,
-        {swapChainExtent.width, swapChainExtent.height, 1},
+        {swapchainExtent.width, swapchainExtent.height, 1},
         1, modelAppInfo.msaaSamples,
         depthFormat, vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eDepthStencilAttachment,
@@ -473,26 +472,26 @@ void ModelApp::initDepthResources() {
 }
 
 void ModelApp::initFramebuffers() {
-    if (appInfo.profileSupported) {
+    if (appInfo.dynamicRenderingSupported) {
         // No framebuffers needed with dynamic rendering
         LOG_CORE_INFO("Using dynamic rendering, skipping framebuffer creation.");
         return;
     }
 
     swapChainFramebuffers.clear();
-    for (size_t i = 0; i < swapChainImageViews.size(); ++i) {
+    for (size_t i = 0; i < swapchainImageViews.size(); ++i) {
         std::array attachments {
             colorImage.imageView,
             depthImage.imageView,
-            *swapChainImageViews[i]
+            *swapchainImageViews[i]
         };
     
         vk::FramebufferCreateInfo framebufferInfo {
             .renderPass = *renderPass,
             .attachmentCount = static_cast<uint32_t>(attachments.size()),
             .pAttachments = attachments.data(),
-            .width = swapChainExtent.width,
-            .height = swapChainExtent.height,
+            .width = swapchainExtent.width,
+            .height = swapchainExtent.height,
             .layers = 1
         };
 
@@ -834,13 +833,13 @@ void ModelApp::buildCapabilitiesSummary() {
     capsSummary.apiVersionMajor = vk::apiVersionMajor(props.apiVersion);
     capsSummary.apiVersionMinor = vk::apiVersionMinor(props.apiVersion);
     capsSummary.apiVersionPatch = vk::apiVersionPatch(props.apiVersion);
-    capsSummary.swapImageCount = static_cast<uint32_t>(swapChainImages.size());
+    capsSummary.swapImageCount = static_cast<uint32_t>(swapchainImages.size());
     capsSummary.presentMode = vkutil::chooseSwapPresentMode(physicalDevice->getSurfacePresentModesKHR(*surface));
-    capsSummary.swapFormat = swapChainImageFormat;
-    capsSummary.dynamicRendering = appInfo.dynamicRenderingSupported || appInfo.profileSupported;
+    capsSummary.swapFormat = swapchainImageFormat;
+    capsSummary.dynamicRendering = appInfo.dynamicRenderingSupported;
     capsSummary.timelineSemaphores = appInfo.timelineSemaphoresSupported;
     capsSummary.sync2 = appInfo.synchronization2Supported;
-    capsSummary.profileSupported = appInfo.profileSupported;
+    // capsSummary.profileSupported = appInfo.profileSupported;
 }
 
 void ModelApp::logCapabilitiesSummary() const {
@@ -860,9 +859,45 @@ void ModelApp::logCapabilitiesSummary() const {
         capsSummary.sync2);
 }
 
-void ModelApp::drawFrame(double deltaTime) {
+void ModelApp::updateUniformBuffer(double deltaTime) {
+    static auto startTime = std::chrono::high_resolution_clock::now();
+
+    const auto currentTime = std::chrono::high_resolution_clock::now();
+    const float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    // glm::vec3 objCenter {(minX + maxX) / 2.0f, (minY + maxY) / 2.0f, (minZ + maxZ) / 2.0f };
+    float xLen { maxX - minX }, yLen { maxY - minY }, zLen { maxZ - minZ };
+
+    glm::vec3 eye { 0.0f, yLen * 2.5, zLen * 2.5};
+    glm::vec3 up {0, 1, 0};
+    glm::mat4 view = glm::lookAt(eye, glm::vec3(0.0f), up);
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f),
+            static_cast<float>(swapchainExtent.width) / static_cast<float>(swapchainExtent.height),
+            0.01f,
+            static_cast<float>(glm::length(glm::vec3{xLen, yLen, zLen})) * 3);
+    // GLM was designed for OpenGL
+    // where Y coordinate of the clip coordinates is inverted
+    proj[1][1] *= -1;
+
+    // Update uniform buffers for each object
+    for (auto& object : modelObjects) {
+        glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), time * glm::radians(30.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 model = object.getModelMatrix() * rotation;
+
+        UniformBufferObject ubo {
+            .model = model,
+            .view = view,
+            .proj = proj
+        };
+
+        // memcpy(object.uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+        object.uniformBuffers[currentFrame].write(&ubo, 1);
+    }
+}
+
+void ModelApp::drawFrame() {
     // Acquire an image from the swap chain
-    auto [result, imageIndex] = swapChain.acquireNextImage(
+    auto [result, imageIndex] = swapchain.acquireNextImage(
         UINT64_MAX, nullptr, inFlightFences[currentFrame]);
     while (vk::Result::eTimeout == device->waitForFences(
         *inFlightFences[currentFrame], vk::True, std::numeric_limits<uint64_t>::max()))
@@ -870,7 +905,7 @@ void ModelApp::drawFrame(double deltaTime) {
     
     if (result == vk::Result::eErrorOutOfDateKHR) {
         LOG_CORE_WARN("Swap chain is out of date during image acquisition. Recreating swap chain...");
-        swapChainOutOfDate = true;
+        swapchainOutOfDate = true;
         return;
     } else if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
         throw std::runtime_error("Failed to acquire swap chain image!");
@@ -881,8 +916,6 @@ void ModelApp::drawFrame(double deltaTime) {
 
     uint64_t graphicsWaitValue = timelineValue;
     uint64_t graphicsSignalValue = ++timelineValue;
-
-    updateUniformBuffer(deltaTime);
 
     {
         // Record the command buffer
@@ -932,7 +965,7 @@ void ModelApp::drawFrame(double deltaTime) {
             .waitSemaphoreCount = 0,
             .pWaitSemaphores = nullptr,
             .swapchainCount = 1,
-            .pSwapchains = &*swapChain,
+            .pSwapchains = &*swapchain,
             .pImageIndices = &imageIndex,
             .pResults = nullptr, // To check multiple swap chains' results
         };
@@ -940,48 +973,12 @@ void ModelApp::drawFrame(double deltaTime) {
         if (result == vk::Result::eErrorOutOfDateKHR ||
             result == vk::Result::eSuboptimalKHR) {
             LOG_CORE_WARN("Swap chain is out of date or suboptimal during presentation. Recreating swap chain...");
-            recreateSwapChain();
+            recreateSwapchain();
         } else if (result != vk::Result::eSuccess) {
             throw std::runtime_error("Failed to present swap chain image!");
         }
     }
     currentFrame = (currentFrame + 1) % appInfo.maxFramesInFlight;
-}
-
-void ModelApp::updateUniformBuffer(double deltaTime) {
-    static auto startTime = std::chrono::high_resolution_clock::now();
-
-    const auto currentTime = std::chrono::high_resolution_clock::now();
-    const float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-
-    // glm::vec3 objCenter {(minX + maxX) / 2.0f, (minY + maxY) / 2.0f, (minZ + maxZ) / 2.0f };
-    float xLen { maxX - minX }, yLen { maxY - minY }, zLen { maxZ - minZ };
-
-    glm::vec3 eye { 0.0f, yLen * 2.5, zLen * 2.5};
-    glm::vec3 up {0, 1, 0};
-    glm::mat4 view = glm::lookAt(eye, glm::vec3(0.0f), up);
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f),
-            static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
-            0.01f,
-            static_cast<float>(glm::length(glm::vec3{xLen, yLen, zLen})) * 3);
-    // GLM was designed for OpenGL
-    // where Y coordinate of the clip coordinates is inverted
-    proj[1][1] *= -1;
-
-    // Update uniform buffers for each object
-    for (auto& object : modelObjects) {
-        glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), time * glm::radians(30.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        glm::mat4 model = object.getModelMatrix() * rotation;
-
-        UniformBufferObject ubo {
-            .model = model,
-            .view = view,
-            .proj = proj
-        };
-
-        // memcpy(object.uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
-        object.uniformBuffers[currentFrame].write(&ubo, 1);
-    }
 }
 
 void ModelApp::recordGraphicsCommandBuffer(uint32_t imageIndex) {
@@ -992,7 +989,7 @@ void ModelApp::recordGraphicsCommandBuffer(uint32_t imageIndex) {
 
     vkutil::transitionImageLayout(commandBuffer,
         // drawImage.image,
-        swapChainImages[imageIndex],
+        swapchainImages[imageIndex],
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eColorAttachmentOptimal);
 
@@ -1001,7 +998,7 @@ void ModelApp::recordGraphicsCommandBuffer(uint32_t imageIndex) {
     vk::ClearValue clearResolve = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
     std::array clearValues = { clearColor, clearDepth, clearResolve};
 
-    if (appInfo.profileSupported || appInfo.dynamicRenderingSupported) {
+    if (appInfo.dynamicRenderingSupported) {
         // begin dynamic rendering
         // multisampled color image
         vkutil::transitionImageLayout(commandBuffer,
@@ -1019,7 +1016,7 @@ void ModelApp::recordGraphicsCommandBuffer(uint32_t imageIndex) {
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .resolveMode = vk::ResolveModeFlagBits::eAverage,
             // .resolveImageView = drawImage.imageView,
-            .resolveImageView = swapChainImageViews[imageIndex],
+            .resolveImageView = swapchainImageViews[imageIndex],
             .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
@@ -1035,7 +1032,7 @@ void ModelApp::recordGraphicsCommandBuffer(uint32_t imageIndex) {
 
         vk::RenderingInfo renderingInfo {
             .renderArea = {
-                .offset = {0, 0}, .extent = swapChainExtent
+                .offset = {0, 0}, .extent = swapchainExtent
             },
             .layerCount = 1,
             .colorAttachmentCount = 1,
@@ -1061,11 +1058,11 @@ void ModelApp::recordGraphicsCommandBuffer(uint32_t imageIndex) {
     commandBuffer.setViewport(0,
         vk::Viewport{
             0.0f, 0.0f,
-            static_cast<float>(swapChainExtent.width),
-            static_cast<float>(swapChainExtent.height),
+            static_cast<float>(swapchainExtent.width),
+            static_cast<float>(swapchainExtent.height),
             0.0f, 1.0f
         });
-    commandBuffer.setScissor(0, vk::Rect2D{vk::Offset2D{0, 0}, swapChainExtent});
+    commandBuffer.setScissor(0, vk::Rect2D{vk::Offset2D{0, 0}, swapchainExtent});
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
     // getCurrentFrame().commandBuffer.bindVertexBuffers(0, {vertexBuffer.buffer}, {0});
     commandBuffer.bindVertexBuffers(0, {vertexBuffer.buffer}, {0});
@@ -1080,7 +1077,7 @@ void ModelApp::recordGraphicsCommandBuffer(uint32_t imageIndex) {
         commandBuffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
     }
 
-    if (appInfo.profileSupported || appInfo.dynamicRenderingSupported) {
+    if (appInfo.dynamicRenderingSupported) {
         commandBuffer.endRendering();
     } else {
         commandBuffer.endRenderPass();
@@ -1118,7 +1115,7 @@ void ModelApp::recordGraphicsCommandBuffer(uint32_t imageIndex) {
 
     vkutil::transitionImageLayout(commandBuffer,
         // drawImage.image,
-        swapChainImages[imageIndex],
+        swapchainImages[imageIndex],
         vk::ImageLayout::eColorAttachmentOptimal,
         vk::ImageLayout::ePresentSrcKHR);
     

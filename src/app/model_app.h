@@ -23,11 +23,11 @@ public:
 
     void onInit(const Window* window) override;
     void onUpdate(double deltaTime) override;
-    // void onRender() override;
+    void onRender() override;
     // void onInputEvent(const InputEvent& event) override;
     void onShutdown() override;
 
-    void recreateSwapChain() override;
+    void recreateSwapchain() override;
 
 public:
     struct Vertex {
@@ -81,7 +81,7 @@ protected:
     
     void initDescriptorAllocator() override;
 
-    void initDescriptorSetLayout();
+    void initDescriptorSetLayouts() override;
 
     void initRenderPass() override;
 
@@ -115,9 +115,9 @@ protected:
 
     void logCapabilitiesSummary() const override;
 
-    void drawFrame(double deltaTime) override;
-
     void updateUniformBuffer(double deltaTime);
+
+    void drawFrame() override;
 
     void recordGraphicsCommandBuffer(uint32_t imageIndex) override;
 };

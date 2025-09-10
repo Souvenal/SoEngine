@@ -32,10 +32,10 @@ void SoEngine::initialize() {
     }
 
     AppInfo appInfo{};
-    ComputeAppInfo computeAppInfo{ 800'000 };
-    app = std::make_unique<ComputeApp>(appDir, appInfo, computeAppInfo);
-    // ModelAppInfo modelAppInfo{};
-    // app = std::make_unique<ModelApp>(appDir, appInfo, modelAppInfo);
+    // ComputeAppInfo computeAppInfo{ 800'000 };
+    // app = std::make_unique<ComputeApp>(appDir, appInfo, computeAppInfo);
+    ModelAppInfo modelAppInfo{};
+    app = std::make_unique<ModelApp>(appDir, appInfo, modelAppInfo);
     if (!app) {
         LOG_ERROR("Failed to create application");
         exitCode = ExitCode::FatalError;
@@ -75,6 +75,8 @@ void SoEngine::mainLoopFrame() {
         }
 
         update();
+
+        render();
     } catch (const std::exception& err) {
         LOG_ERROR("Fatal error: {}", err.what());
         exitCode = ExitCode::FatalError;
@@ -89,6 +91,10 @@ void SoEngine::update() {
     }
 
     app->onUpdate(deltaTime);
+}
+
+void SoEngine::render() {
+    app->onRender();
 }
 
 void SoEngine::terminate(ExitCode code) {
@@ -115,7 +121,7 @@ void SoEngine::resizeFramebuffer() {
         window->waitEvents();
         framebufferExtent = window->getFramebufferSize();
     }
-    app->recreateSwapChain();
+    app->recreateSwapchain();
 }
 
 void SoEngine::inputEvent(const InputEvent& event) {

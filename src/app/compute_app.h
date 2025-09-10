@@ -19,7 +19,7 @@ public:
 
     void onInit(const Window* window) override;
     void onUpdate(double deltaTime) override;
-    // void onRender() override;
+    void onRender() override;
     // void onInputEvent(const InputEvent& event) override;
     void onShutdown() override;
 
@@ -68,9 +68,9 @@ protected:
 
     void initDescriptorSets() override;
 
-    void drawFrame(double deltaTime) override;
-
     void updateUniformBuffer(double deltaTime);
+
+    void drawFrame() override;
 
     void recordComputeCommandBuffer();
 
