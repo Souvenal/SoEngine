@@ -58,10 +58,13 @@ class Application {
 public:
 
     Application() = delete;
-    explicit Application(const std::filesystem::path& appDir);
-    explicit Application(const std::filesystem::path& appDir, const AppInfo& appInfo);
+    explicit Application(
+            const std::filesystem::path& appDir,
+            const Window* window,
+            const AppInfo& appInfo = AppInfo{});
     virtual ~Application() = 0;
-    virtual void onInit(const Window* window);
+    virtual void onInit();
+    virtual void onPrepare();
     virtual void onUpdate(double deltaTime);
     virtual void onRender();
     virtual void onInputEvent(const InputEvent& event);
@@ -82,7 +85,6 @@ protected:
     AppInfo appInfo;
 
     const Window* window  { nullptr };
-    ImGui_ImplVulkanH_Window* imguiWindow { nullptr };
 
     AppCapabilitiesSummary capsSummary {};
 
@@ -122,7 +124,6 @@ protected:
     // AllocatedImage  drawImage;
 
     vk::raii::PipelineLayout            graphicsPipelineLayout { nullptr };
-    vk::PipelineRenderingCreateInfoKHR  pipelineRenderingCreateInfo {};
     vk::raii::Pipeline                  graphicsPipeline { nullptr };
 
     vk::raii::CommandPool                   graphicsCommandPool { nullptr };
@@ -239,6 +240,9 @@ protected:
      */
     virtual void initSyncObjects();
 
+    /**
+     * @brief Initializes ImGui for GUI rendering
+     */
     virtual void initImGui();
 
     /**
@@ -252,15 +256,29 @@ protected:
     virtual void logCapabilitiesSummary() const;
 
     /**
+     * @brief Updates the ImGui interface
+     */
+    virtual void updateImGui();
+
+    /**
      * @brief Draws a single frame
      */
     virtual void drawFrame() = 0;
 
     /**
-     * @brief Records commands into the graphics command buffer for the current frame
-     * @param imageIndex Index of the swap chain image to render to
+     * @brief Draws the background
      */
-    virtual void recordGraphicsCommandBuffer(uint32_t imageIndex) = 0;
+    virtual void drawBackground(const vk::raii::CommandBuffer& commandBuffer);
+
+    /**
+     * @brief Draws the 3D scene
+     */
+    virtual void drawScene(const vk::raii::CommandBuffer& commandBuffer, uint32_t imageIndex);
+
+    /**
+     * @brief Draws the ImGui interface
+     */
+    virtual void drawImGui(const vk::raii::CommandBuffer& commandBuffer, uint32_t imageIndex);
 
     /**
      * @brief Cleans up Vulkan resources

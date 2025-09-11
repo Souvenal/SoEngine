@@ -67,7 +67,86 @@ vk::ImageViewCreateInfo imageViewCreateInfo(vk::Image image,
     };
 }
 
-[[nodiscard]]
+vk::RenderingAttachmentInfo colorAttachmentInfo(
+        vk::ImageView imageView,
+        vk::ImageLayout imageLayout,
+        std::optional<vk::ClearValue> clearValue) {
+    return vk::RenderingAttachmentInfo{
+        .imageView = imageView,
+        .imageLayout = imageLayout,
+        .loadOp = clearValue ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .clearValue = clearValue.value_or(vk::ClearValue{})};
+}
+
+vk::RenderingAttachmentInfo depthAttachmentInfo(
+        vk::ImageView imageView,
+        vk::ImageLayout layout) {
+    return vk::RenderingAttachmentInfo{
+        .imageView = imageView,
+        .imageLayout = layout,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eDontCare,
+        .clearValue = vk::ClearDepthStencilValue{1.f, 0}
+    };
+}
+
+vk::RenderingInfo renderingInfo(
+        vk::Extent2D extent,
+        vk::RenderingAttachmentInfo colorAttachment,
+        vk::RenderingAttachmentInfo depthAttachment) {
+    return vk::RenderingInfo{
+        .renderArea = { .offset = { 0, 0 }, .extent = extent },
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &colorAttachment,
+        .pDepthAttachment = &depthAttachment,
+        .pStencilAttachment = nullptr};
+}
+
+//> init submit
+vk::CommandBufferSubmitInfo commandBufferSubmitInfo(
+        const vk::CommandBuffer& commandBuffer) {
+    return vk::CommandBufferSubmitInfo{
+        .commandBuffer = commandBuffer,
+        .deviceMask = 0};
+}
+
+vk::SemaphoreSubmitInfo semaphoreSubmitInfo(
+        vk::PipelineStageFlags2 stageMask,
+        vk::Semaphore semaphore,
+        uint64_t value) {
+    return vk::SemaphoreSubmitInfo{
+        .semaphore = semaphore,
+        .value = value,
+        .stageMask = stageMask,
+        .deviceIndex = 0};
+}
+
+vk::SubmitInfo2 submitInfo(
+        const vk::CommandBufferSubmitInfo& commandBufferInfo,
+        const vk::SemaphoreSubmitInfo& waitSemaphoreInfo,
+        const vk::SemaphoreSubmitInfo& signalSemaphoreInfo) {
+    return submitInfo(
+        std::span{ &commandBufferInfo, 1 },
+        std::span{ &waitSemaphoreInfo, 1 },
+        std::span{ &signalSemaphoreInfo, 1 });
+}
+
+vk::SubmitInfo2 submitInfo(
+        std::span<const vk::CommandBufferSubmitInfo> commandBufferInfos,
+        std::span<const vk::SemaphoreSubmitInfo> waitSemaphoreInfos,
+        std::span<const vk::SemaphoreSubmitInfo> signalSemaphoreInfos) {
+    return vk::SubmitInfo2{
+        .waitSemaphoreInfoCount = static_cast<uint32_t>(waitSemaphoreInfos.size()),
+        .pWaitSemaphoreInfos = waitSemaphoreInfos.data(),
+        .commandBufferInfoCount = static_cast<uint32_t>(commandBufferInfos.size()),
+        .pCommandBufferInfos = commandBufferInfos.data(),
+        .signalSemaphoreInfoCount = static_cast<uint32_t>(signalSemaphoreInfos.size()),
+        .pSignalSemaphoreInfos = signalSemaphoreInfos.data()};
+}
+//< init submit
+
 VmaAllocationCreateInfo vmaAllocationCreateInfo(MemoryType memoryType) {
     VmaAllocationCreateInfo vmaAllocCreateInfo {};
     if (memoryType == MemoryType::DeviceLocal) {

@@ -3,6 +3,7 @@
 #include "render/vulkan/vk_pipelines.h"
 #include "render/vulkan/vk_images.h"
 #include "render/vulkan/vk_utils.h"
+#include "render/vulkan/vk_initializers.h"
 #include "common/ktx_error.h"
 
 #define TINYGLTF_IMPLEMENTATION
@@ -37,23 +38,19 @@ bool ModelApp::Vertex::operator==(const Vertex& other) const {
 
 ModelApp::ModelApp(
         const std::filesystem::path& appDir,
+        const Window* window,
         const AppInfo& appInfo,
         const ModelAppInfo& modelAppInfo)
-    : Application(appDir, appInfo), modelAppInfo(modelAppInfo) { }
+    : Application(appDir, window, appInfo), modelAppInfo(modelAppInfo) { }
 
 ModelApp::~ModelApp() { }
 
-void ModelApp::onInit(const Window* window) {
-    // Application::onInit(window);
+void ModelApp::onInit() {
     LOG_CORE_INFO("===Model application initialization start===");
 
     initInstance("Model Application");
     initDebugMessenger();
-    surface = window->createSurface(*instance);        // influence physical device selection
-    auto framebufferSize = window->getFramebufferSize();
-    swapchainExtent.width = framebufferSize.width;
-    swapchainExtent.height = framebufferSize.height;
-    windowExtent = window->getWindowSize();
+    initSurface();
 
     selectPhysicalDevice();
     modelAppInfo.msaaSamples = vkutil::getMaxUsableSampleCount(*physicalDevice);
@@ -94,6 +91,8 @@ void ModelApp::onInit(const Window* window) {
 
     initSyncObjects();
 
+    initImGui();
+
     // Print feature support summary
     // appInfo.printFeatureSupportSummary();
 
@@ -104,11 +103,8 @@ void ModelApp::onInit(const Window* window) {
 }
 
 void ModelApp::onUpdate(double deltaTime) {
+    Application::onUpdate(deltaTime);
     updateUniformBuffer(deltaTime);
-}
-
-void ModelApp::onRender() {
-    drawFrame();
 }
 
 void ModelApp::onShutdown() {
@@ -127,8 +123,6 @@ void ModelApp::recreateSwapchain() {
 }
 
 void ModelApp::initCommandBuffers() {
-    graphicsCommandBuffers.clear();
-
     vk::CommandBufferAllocateInfo allocInfo {
         .commandPool = *graphicsCommandPool,
         .level = vk::CommandBufferLevel::ePrimary,
@@ -231,13 +225,15 @@ void ModelApp::initRenderPass() {
 }
 
 void ModelApp::initDescriptorAllocator() {
+    uint32_t objectSets = modelAppInfo.maxObjects * appInfo.maxFramesInFlight;
+    uint32_t imguiSets = appInfo.maxFramesInFlight;
+    uint32_t maxSets = objectSets + imguiSets;
+
     std::vector<DescriptorAllocator::PoolSizeRatio> sizes = {
         { vk::DescriptorType::eUniformBuffer, 1.0f },
-        { vk::DescriptorType::eCombinedImageSampler, 1.0f }};
+        { vk::DescriptorType::eCombinedImageSampler, 1.5f }};
     globalDescriptorAllocator = DescriptorAllocator(
-        *device,
-        modelAppInfo.maxObjects * appInfo.maxFramesInFlight,
-        sizes);
+        *device, maxSets, sizes);
 
     LOG_CORE_DEBUG("Descriptor allocator is successfully initialized");
 }
@@ -404,7 +400,7 @@ void ModelApp::initGraphicsPipeline() {
     };
     graphicsPipelineLayout = vk::raii::PipelineLayout(*device, pipelineLayoutInfo);
 
-    vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo {
+    vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo = {
         .colorAttachmentCount = 1,
         .pColorAttachmentFormats = &swapchainImageFormat,
         .depthAttachmentFormat = vkutil::findDepthFormat(*physicalDevice),
@@ -918,57 +914,58 @@ void ModelApp::drawFrame() {
     uint64_t graphicsSignalValue = ++timelineValue;
 
     {
-        // Record the command buffer
+        const auto& commandBuffer = graphicsCommandBuffers[currentFrame];
+        commandBuffer.reset();
+        commandBuffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
-        // drawBackground(graphicsCommandBuffer, imageIndex);
-        recordGraphicsCommandBuffer(imageIndex);
+        // multisampled color image
+        vkutil::transitionImageLayout(
+            commandBuffer, colorImage.image,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
+        // depth image
+        vkutil::transitionImageLayout(
+            commandBuffer, depthImage.image,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal);
+        // swap chain image
+        vkutil::transitionImageLayout(
+            commandBuffer, swapchainImages[imageIndex],
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
 
-        vk::TimelineSemaphoreSubmitInfo timelineSubmitInfo {
-            .waitSemaphoreValueCount = 1,
-            .pWaitSemaphoreValues = &graphicsWaitValue,
-            .signalSemaphoreValueCount = 1,
-            .pSignalSemaphoreValues = &graphicsSignalValue,
-        };
+        drawScene(commandBuffer, imageIndex);
+
+        drawImGui(commandBuffer, imageIndex);
+
+        // set swapchain image layout to present
+        vkutil::transitionImageLayout(
+            commandBuffer, swapchainImages[imageIndex],
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR);
+
+        commandBuffer.end();
         
-        // This is for model rendering
-        // vk::PipelineStageFlags waitDestinationStageMask {
-        //     vk::PipelineStageFlagBits::eColorAttachmentOutput
-        // };
+        // submit
+        auto commandInfo = vkinit::commandBufferSubmitInfo(commandBuffer);
+        auto waitSubmitInfo = vkinit::semaphoreSubmitInfo(
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, semaphore, graphicsWaitValue);
+        auto signalSubmitInfo = vkinit::semaphoreSubmitInfo(
+            vk::PipelineStageFlagBits2::eAllCommands, semaphore, graphicsSignalValue);
+        auto submitInfo = vkinit::submitInfo(
+            commandInfo, waitSubmitInfo, signalSubmitInfo);
 
-        // This is for compute particle rendering
-        vk::PipelineStageFlags waitStages[] = {
-            vk::PipelineStageFlagBits::eVertexInput
-        };
-        const vk::SubmitInfo submitInfo {
-            .pNext = &timelineSubmitInfo,
-            .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &*semaphore,
-            .pWaitDstStageMask = waitStages,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &*graphicsCommandBuffers[currentFrame],
-            .signalSemaphoreCount = 1,
-            .pSignalSemaphores = &*semaphore,
-        };
+        graphicsQueue.submit2(submitInfo, {});
 
-        graphicsQueue.submit(submitInfo, nullptr);
-
+        // Because PresentInfo does not support timeline semaphore
         vk::SemaphoreWaitInfo waitInfo {
             .semaphoreCount = 1,
             .pSemaphores = &*semaphore,
-            .pValues = &graphicsSignalValue
-        };
+            .pValues = &graphicsSignalValue};
         while (vk::Result::eTimeout == device->waitSemaphores(waitInfo, std::numeric_limits<uint64_t>::max()))
             ;
 
         // Presentation
         const vk::PresentInfoKHR presentInfo {
-            .waitSemaphoreCount = 0,
-            .pWaitSemaphores = nullptr,
             .swapchainCount = 1,
             .pSwapchains = &*swapchain,
-            .pImageIndices = &imageIndex,
-            .pResults = nullptr, // To check multiple swap chains' results
-        };
+            .pImageIndices = &imageIndex};
         result = presentQueue.presentKHR(presentInfo);
         if (result == vk::Result::eErrorOutOfDateKHR ||
             result == vk::Result::eSuboptimalKHR) {
@@ -981,90 +978,33 @@ void ModelApp::drawFrame() {
     currentFrame = (currentFrame + 1) % appInfo.maxFramesInFlight;
 }
 
-void ModelApp::recordGraphicsCommandBuffer(uint32_t imageIndex) {
-    const auto& commandBuffer = graphicsCommandBuffers[currentFrame];
+void ModelApp::drawScene(const vk::raii::CommandBuffer& commandBuffer, uint32_t imageIndex) {
+    vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+    auto colorAttachment = vkinit::colorAttachmentInfo(
+        colorImage.imageView, vk::ImageLayout::eColorAttachmentOptimal, clearColor);
+    colorAttachment.resolveMode = vk::ResolveModeFlagBits::eAverage;
+    colorAttachment.resolveImageView = swapchainImageViews[imageIndex];
+    colorAttachment.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
 
-    commandBuffer.reset();
-    commandBuffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    auto depthAttachment = vkinit::depthAttachmentInfo(
+        depthImage.imageView, vk::ImageLayout::eDepthAttachmentOptimal);
 
-    vkutil::transitionImageLayout(commandBuffer,
-        // drawImage.image,
-        swapchainImages[imageIndex],
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eColorAttachmentOptimal);
+    // Begin dynamic rendering
+    auto renderingInfo = vkinit::renderingInfo(
+        swapchainExtent, colorAttachment, depthAttachment);
+    commandBuffer.beginRendering(renderingInfo);
 
-    vk::ClearValue clearColor = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
-    vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
-    vk::ClearValue clearResolve = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
-    std::array clearValues = { clearColor, clearDepth, clearResolve};
-
-    if (appInfo.dynamicRenderingSupported) {
-        // begin dynamic rendering
-        // multisampled color image
-        vkutil::transitionImageLayout(commandBuffer,
-            colorImage.image,
-            vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eColorAttachmentOptimal);
-        // depth image
-        vkutil::transitionImageLayout(commandBuffer,
-            depthImage.image,
-            vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eDepthAttachmentOptimal);
-
-        vk::RenderingAttachmentInfo colorAttachmentInfo {
-            .imageView = colorImage.imageView,
-            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .resolveMode = vk::ResolveModeFlagBits::eAverage,
-            // .resolveImageView = drawImage.imageView,
-            .resolveImageView = swapchainImageViews[imageIndex],
-            .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = clearColor,
-        };
-        vk::RenderingAttachmentInfo depthAttachmentInfo {
-            .imageView = depthImage.imageView,
-            .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eDontCare,
-            .clearValue = clearDepth,
-        };
-
-        vk::RenderingInfo renderingInfo {
-            .renderArea = {
-                .offset = {0, 0}, .extent = swapchainExtent
-            },
-            .layerCount = 1,
-            .colorAttachmentCount = 1,
-            .pColorAttachments = &colorAttachmentInfo,
-            .pDepthAttachment = &depthAttachmentInfo,
-        };
-
-        commandBuffer.beginRendering(renderingInfo);
-    } else {
-        throw std::runtime_error("Device does not support dynamic rendering.");
-        // Use traditional render pass
-        // vk::RenderPassBeginInfo renderPassBeginInfo {
-        //     .renderPass = *renderPass,
-        //     .framebuffer = *swapChainFramebuffers[imageIndex],
-        //     .renderArea = {{0, 0}, swapChainExtent},
-        //     .clearValueCount = static_cast<uint32_t>(clearValues.size()),
-        //     .pClearValues = clearValues.data(),
-        // };
-
-        // getCurrentFrame().commandBuffer.beginRenderPass(renderPassBeginInfo, vk::SubpassContents::eInline);
-    }
-
+    // Set dynamic viewport and scissor
     commandBuffer.setViewport(0,
         vk::Viewport{
             0.0f, 0.0f,
             static_cast<float>(swapchainExtent.width),
             static_cast<float>(swapchainExtent.height),
-            0.0f, 1.0f
-        });
+            0.0f, 1.0f});
     commandBuffer.setScissor(0, vk::Rect2D{vk::Offset2D{0, 0}, swapchainExtent});
+
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
-    // getCurrentFrame().commandBuffer.bindVertexBuffers(0, {vertexBuffer.buffer}, {0});
+
     commandBuffer.bindVertexBuffers(0, {vertexBuffer.buffer}, {0});
     commandBuffer.bindIndexBuffer(indexBuffer.buffer, 0, vk::IndexType::eUint32);
     // Draw each object with its own descriptor set
@@ -1077,47 +1017,5 @@ void ModelApp::recordGraphicsCommandBuffer(uint32_t imageIndex) {
         commandBuffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
     }
 
-    if (appInfo.dynamicRenderingSupported) {
-        commandBuffer.endRendering();
-    } else {
-        commandBuffer.endRenderPass();
-    }
-
-    // vkutil::transitionImageLayout(cmd,
-    //     drawImage.image,
-    //     vk::ImageLayout::eColorAttachmentOptimal,
-    //     vk::ImageLayout::eTransferSrcOptimal);
-    // vkutil::transitionImageLayout(cmd,
-    //     swapChainImages[imageIndex],
-    //     vk::ImageLayout::eUndefined,
-    //     vk::ImageLayout::eTransferDstOptimal);
-    // auto drawExtent = vk::Extent2D{ drawImage.imageExtent.width, drawImage.imageExtent.height };
-    // vkutil::copyImageToImage(cmd,
-    //     drawImage.image,
-    //     swapChainImages[imageIndex],
-    //     drawExtent,
-    //     swapChainExtent
-    // );
-
-    // vkutil::transitionImageLayout(cmd,
-    //     swapChainImages[imageIndex],
-    //     vk::ImageLayout::eTransferDstOptimal,
-    //     vk::ImageLayout::eColorAttachmentOptimal
-    // );
-
-    // drawGui();
-
-    // vkutil::transitionImageLayout(cmd,
-    //     swapChainImages[imageIndex],
-    //     vk::ImageLayout::eTransferDstOptimal,
-    //     vk::ImageLayout::ePresentSrcKHR
-    // );
-
-    vkutil::transitionImageLayout(commandBuffer,
-        // drawImage.image,
-        swapchainImages[imageIndex],
-        vk::ImageLayout::eColorAttachmentOptimal,
-        vk::ImageLayout::ePresentSrcKHR);
-    
-    commandBuffer.end();
+    commandBuffer.endRendering();
 }

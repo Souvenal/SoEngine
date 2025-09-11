@@ -13,13 +13,13 @@ class ComputeApp : public Application {
 public:
     ComputeApp(
             const std::filesystem::path& appDir,
+            const Window* window,
             const AppInfo& appInfo,
             const ComputeAppInfo& computeInfo);
     ~ComputeApp();
 
-    void onInit(const Window* window) override;
+    void onInit() override;
     void onUpdate(double deltaTime) override;
-    void onRender() override;
     // void onInputEvent(const InputEvent& event) override;
     void onShutdown() override;
 
@@ -48,15 +48,15 @@ protected:
 
     std::vector<vk::raii::DescriptorSet> computeDescriptorSets;
 
-    std::vector<vk::raii::CommandBuffer>    graphicsCommandBuffers;
-    std::vector<vk::raii::CommandBuffer>    computeCommandBuffers;
+    vk::raii::CommandBuffers    graphicsCommandBuffers { nullptr };
+    vk::raii::CommandBuffers    computeCommandBuffers { nullptr };
 
 protected:
     void initCommandBuffers() override;
     
     void initDescriptorAllocator() override;
 
-    void initComputeDescriptorSetLayout();
+    void initDescriptorSetLayouts() override;
 
     void initComputePipeline();
 
@@ -74,5 +74,5 @@ protected:
 
     void recordComputeCommandBuffer();
 
-    void recordGraphicsCommandBuffer(uint32_t imageIndex) override;
+    void drawScene(const vk::raii::CommandBuffer& commandBuffer, uint32_t imageIndex) override;
 };

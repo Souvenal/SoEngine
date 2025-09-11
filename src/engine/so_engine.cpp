@@ -32,10 +32,10 @@ void SoEngine::initialize() {
     }
 
     AppInfo appInfo{};
-    // ComputeAppInfo computeAppInfo{ 800'000 };
-    // app = std::make_unique<ComputeApp>(appDir, appInfo, computeAppInfo);
-    ModelAppInfo modelAppInfo{};
-    app = std::make_unique<ModelApp>(appDir, appInfo, modelAppInfo);
+    ComputeAppInfo computeAppInfo{ 800'000 };
+    app = std::make_unique<ComputeApp>(appDir, window.get(), appInfo, computeAppInfo);
+    // ModelAppInfo modelAppInfo{};
+    // app = std::make_unique<ModelApp>(appDir, window.get(), appInfo, modelAppInfo);
     if (!app) {
         LOG_ERROR("Failed to create application");
         exitCode = ExitCode::FatalError;
@@ -43,8 +43,7 @@ void SoEngine::initialize() {
     }
 
     try {
-        // app->prepare(window.get());
-        app->onInit(window.get());
+        app->onInit();
         exitCode = ExitCode::Success;
     } catch (const vk::SystemError& err) {
         LOG_CORE_ERROR("Vulkan error initializing application: {}", err.what());
@@ -74,6 +73,8 @@ void SoEngine::mainLoopFrame() {
             return;
         }
 
+        prepare();
+
         update();
 
         render();
@@ -81,6 +82,10 @@ void SoEngine::mainLoopFrame() {
         LOG_ERROR("Fatal error: {}", err.what());
         exitCode = ExitCode::FatalError;
     }
+}
+
+void SoEngine::prepare() {
+    app->onPrepare();
 }
 
 void SoEngine::update() {

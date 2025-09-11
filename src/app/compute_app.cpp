@@ -3,6 +3,7 @@
 #include "render/vulkan/vk_pipelines.h"
 #include "render/vulkan/vk_images.h"
 #include "render/vulkan/vk_utils.h"
+#include "render/vulkan/vk_initializers.h"
 
 #include <numbers>
 #include <random>
@@ -20,23 +21,20 @@ std::array<vk::VertexInputAttributeDescription, 2> ComputeApp::Particle::getAttr
 
 ComputeApp::ComputeApp(
         const std::filesystem::path& appDir,
+        const Window* window,
         const AppInfo& appInfo,
         const ComputeAppInfo& computeAppInfo):
-    Application(appDir, appInfo),
+    Application(appDir, window, appInfo),
     computeAppInfo(computeAppInfo) { }
 
 ComputeApp::~ComputeApp() { }
 
-void ComputeApp::onInit(const Window* window) {
+void ComputeApp::onInit() {
     LOG_CORE_INFO("===Compute application initialization start===");
 
     initInstance("Compute application");
     // initDebugMessenger();
-    surface = window->createSurface(*instance);        // influence physical device selection
-    auto framebufferSize = window->getFramebufferSize();
-    swapchainExtent.width = framebufferSize.width;
-    swapchainExtent.height = framebufferSize.height;
-    windowExtent = window->getWindowSize();
+    initSurface();
 
     selectPhysicalDevice();
 
@@ -53,7 +51,7 @@ void ComputeApp::onInit(const Window* window) {
     //     initRenderPass();
     // }
     initDescriptorAllocator();
-    initComputeDescriptorSetLayout();
+    initDescriptorSetLayouts();
     initComputePipeline();
     initGraphicsPipeline();
     
@@ -67,6 +65,8 @@ void ComputeApp::onInit(const Window* window) {
 
     initSyncObjects();
 
+    initImGui();
+
     buildCapabilitiesSummary();
     logCapabilitiesSummary();
 
@@ -74,11 +74,8 @@ void ComputeApp::onInit(const Window* window) {
 }
 
 void ComputeApp::onUpdate(double deltaTime) {
+    Application::onUpdate(deltaTime);
     updateUniformBuffer(deltaTime);
-}
-
-void ComputeApp::onRender() {
-    drawFrame();
 }
 
 void ComputeApp::onShutdown() {
@@ -86,36 +83,36 @@ void ComputeApp::onShutdown() {
 }
 
 void ComputeApp::initCommandBuffers() {
-    graphicsCommandBuffers.clear();
     vk::CommandBufferAllocateInfo allocInfo {
         .commandPool = *graphicsCommandPool,
         .level = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = appInfo.maxFramesInFlight
     };
-    graphicsCommandBuffers = std::vector<vk::raii::CommandBuffer>(
-        device->allocateCommandBuffers(allocInfo));
+    graphicsCommandBuffers = vk::raii::CommandBuffers(*device, allocInfo);
 
-    computeCommandBuffers.clear();
     vk::CommandBufferAllocateInfo computeAllocInfo {
         .commandPool = *computeCommandPool,
         .level = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = appInfo.maxFramesInFlight
     };
-    computeCommandBuffers = std::vector<vk::raii::CommandBuffer>(
-        device->allocateCommandBuffers(computeAllocInfo));
+    computeCommandBuffers = vk::raii::CommandBuffers(*device, computeAllocInfo);
 
     LOG_CORE_DEBUG("Graphics and compute command buffers are successfully initialized");
 }
 
 void ComputeApp::initDescriptorAllocator() {
+    uint32_t particleSets = appInfo.maxFramesInFlight;
+    uint32_t imguiSets = appInfo.maxFramesInFlight;
+    uint32_t maxSets = particleSets + imguiSets;
     std::vector<DescriptorAllocator::PoolSizeRatio> sizes = {
-        { vk::DescriptorType::eUniformBuffer, 1 },
-        { vk::DescriptorType::eStorageBuffer, 2 }
+        { vk::DescriptorType::eUniformBuffer, 1.0f },
+        { vk::DescriptorType::eStorageBuffer, 2.0f },
+        { vk::DescriptorType::eCombinedImageSampler, 1.0f }
     };
-    globalDescriptorAllocator = DescriptorAllocator(*device, appInfo.maxFramesInFlight, sizes);
+    globalDescriptorAllocator = DescriptorAllocator(*device, maxSets, sizes);
 }
 
-void ComputeApp::initComputeDescriptorSetLayout() {
+void ComputeApp::initDescriptorSetLayouts() {
     DescriptorLayoutBuilder builder;
     builder.addBinding(0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eCompute);
     builder.addBinding(1, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute);
@@ -361,6 +358,14 @@ void ComputeApp::initDescriptorSets() {
     LOG_CORE_DEBUG("Compute descriptor sets are successfully initialized");
 }
 
+void ComputeApp::updateUniformBuffer(double deltaTime) {
+    UniformBufferObject ubo{};
+    ubo.deltaTime = static_cast<float>(deltaTime) * 2000.0f;
+    // LOG_CORE_DEBUG("{}", ubo.deltaTime * 1000.f);
+
+    uniformBuffers[currentFrame].write(&ubo, 1);
+}
+
 void ComputeApp::drawFrame() {
     // Acquire an image from the swap chain
     auto [result, imageIndex] = swapchain.acquireNextImage(
@@ -414,38 +419,36 @@ void ComputeApp::drawFrame() {
     }
     // Graphics Task
     {
-        // Record the command buffer
+        const auto& commandBuffer = graphicsCommandBuffers[currentFrame];
+        commandBuffer.reset();
+        commandBuffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    
+        vkutil::transitionImageLayout(
+            commandBuffer, swapchainImages[imageIndex],
+            vk::ImageLayout::eUndefined,
+            vk::ImageLayout::eColorAttachmentOptimal);
 
-        recordGraphicsCommandBuffer(imageIndex);
+        drawScene(commandBuffer, imageIndex);
 
-        vk::TimelineSemaphoreSubmitInfo timelineSubmitInfo {
-            .waitSemaphoreValueCount = 1,
-            .pWaitSemaphoreValues = &graphicsWaitValue,
-            .signalSemaphoreValueCount = 1,
-            .pSignalSemaphoreValues = &graphicsSignalValue,
-        };
-        
-        // This is for model rendering
-        // vk::PipelineStageFlags waitDestinationStageMask {
-        //     vk::PipelineStageFlagBits::eColorAttachmentOutput
-        // };
+        drawImGui(commandBuffer, imageIndex);
 
-        // This is for compute particle rendering
-        vk::PipelineStageFlags waitStages[] = {
-            vk::PipelineStageFlagBits::eVertexInput
-        };
-        const vk::SubmitInfo submitInfo {
-            .pNext = &timelineSubmitInfo,
-            .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &*semaphore,
-            .pWaitDstStageMask = waitStages,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &*graphicsCommandBuffers[currentFrame],
-            .signalSemaphoreCount = 1,
-            .pSignalSemaphores = &*semaphore,
-        };
+        vkutil::transitionImageLayout(commandBuffer,
+            swapchainImages[imageIndex],
+            vk::ImageLayout::eColorAttachmentOptimal,
+            vk::ImageLayout::ePresentSrcKHR
+        );
 
-        graphicsQueue.submit(submitInfo, nullptr);
+        commandBuffer.end();
+
+        auto commandBufferInfo = vkinit::commandBufferSubmitInfo(*graphicsCommandBuffers[currentFrame]);
+        auto waitSubmitInfo = vkinit::semaphoreSubmitInfo(
+            vk::PipelineStageFlagBits2::eVertexInput, *semaphore, graphicsWaitValue);
+        auto signalSubmitInfo = vkinit::semaphoreSubmitInfo(
+            vk::PipelineStageFlagBits2::eAllCommands, *semaphore, graphicsSignalValue);
+        auto submitInfo = vkinit::submitInfo(
+            commandBufferInfo, waitSubmitInfo, signalSubmitInfo);
+
+        graphicsQueue.submit2(submitInfo, {});
 
         vk::SemaphoreWaitInfo waitInfo {
             .semaphoreCount = 1,
@@ -457,8 +460,6 @@ void ComputeApp::drawFrame() {
 
         // Presentation
         const vk::PresentInfoKHR presentInfo {
-            .waitSemaphoreCount = 0,
-            .pWaitSemaphores = nullptr,
             .swapchainCount = 1,
             .pSwapchains = &*swapchain,
             .pImageIndices = &imageIndex,
@@ -476,14 +477,6 @@ void ComputeApp::drawFrame() {
     currentFrame = (currentFrame + 1) % appInfo.maxFramesInFlight;
 }
 
-void ComputeApp::updateUniformBuffer(double deltaTime) {
-    UniformBufferObject ubo{};
-    ubo.deltaTime = static_cast<float>(deltaTime) * 2000.0f;
-    // LOG_CORE_DEBUG("{}", ubo.deltaTime * 1000.f);
-
-    uniformBuffers[currentFrame].write(&ubo, 1);
-}
-
 void ComputeApp::recordComputeCommandBuffer() {
     const auto& commandBuffer = computeCommandBuffers[currentFrame];
     commandBuffer.reset();
@@ -494,42 +487,18 @@ void ComputeApp::recordComputeCommandBuffer() {
     commandBuffer.end();
 }
 
-void ComputeApp::recordGraphicsCommandBuffer(uint32_t imageIndex) {
-    const auto& commandBuffer = graphicsCommandBuffers[currentFrame];
-    commandBuffer.reset();
-    commandBuffer.begin( {} );
-    // Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
-    vkutil::transitionImageLayout(commandBuffer,
-        swapchainImages[imageIndex],
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eColorAttachmentOptimal
-    );
+void ComputeApp::drawScene(const vk::raii::CommandBuffer& commandBuffer, uint32_t imageIndex) {
     vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
-    vk::RenderingAttachmentInfo attachmentInfo = {
-        .imageView = swapchainImageViews[imageIndex],
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .clearValue = clearColor
-    };
-    vk::RenderingInfo renderingInfo = {
-        .renderArea = { .offset = { 0, 0 }, .extent = swapchainExtent },
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &attachmentInfo
-    };
+    auto colorAttachment = vkinit::colorAttachmentInfo(
+        swapchainImageViews[imageIndex], vk::ImageLayout::eColorAttachmentOptimal, clearColor);
+    auto renderingInfo = vkinit::renderingInfo(swapchainExtent, colorAttachment);
     commandBuffer.beginRendering(renderingInfo);
+
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
     commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapchainExtent.width), static_cast<float>(swapchainExtent.height), 0.0f, 1.0f));
     commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapchainExtent));
     commandBuffer.bindVertexBuffers(0, { shaderStorageBuffers[currentFrame].buffer }, {0});
     commandBuffer.draw( computeAppInfo.particleCount, 1, 0, 0 );
+
     commandBuffer.endRendering();
-    // After rendering, transition the swapchain image to PRESENT_SRC
-    vkutil::transitionImageLayout(commandBuffer,
-        swapchainImages[imageIndex],
-        vk::ImageLayout::eColorAttachmentOptimal,
-        vk::ImageLayout::ePresentSrcKHR
-    );
-    commandBuffer.end();
 }

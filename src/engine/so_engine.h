@@ -35,6 +35,11 @@ public:
     void mainLoopFrame();
 
     /**
+     * @brief Prepares each frame (called once per frame)
+     */
+    void prepare();
+
+    /**
      * @brief Updates the application state (called once per frame)
      */
     void update();

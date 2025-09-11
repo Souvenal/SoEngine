@@ -17,13 +17,13 @@ class ModelApp : public Application {
 public:
     ModelApp(
             const std::filesystem::path& appDir,
+            const Window* window,
             const AppInfo& appInfo,
             const ModelAppInfo& info);
     ~ModelApp();
 
-    void onInit(const Window* window) override;
+    void onInit() override;
     void onUpdate(double deltaTime) override;
-    void onRender() override;
     // void onInputEvent(const InputEvent& event) override;
     void onShutdown() override;
 
@@ -52,6 +52,8 @@ protected:
 
     vk::raii::DescriptorSetLayout       drawImageDescriptorSetLayout { nullptr };
 
+    vk::raii::CommandBuffers graphicsCommandBuffers { nullptr };
+
     AllocatedImage  colorImage {};
     AllocatedImage  depthImage {};
 
@@ -64,8 +66,6 @@ protected:
     std::vector<uint32_t>   indices {};
     AllocatedBuffer         vertexBuffer {};
     AllocatedBuffer         indexBuffer {};
-
-    std::vector<vk::raii::CommandBuffer>    graphicsCommandBuffers;
 
     std::vector<ModelObject> modelObjects;
 
@@ -119,7 +119,7 @@ protected:
 
     void drawFrame() override;
 
-    void recordGraphicsCommandBuffer(uint32_t imageIndex) override;
+    void drawScene(const vk::raii::CommandBuffer& commandBuffer, uint32_t imageIndex) override;
 };
 
 template<>

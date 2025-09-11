@@ -1,6 +1,7 @@
 #include "application.h"
 
 #include "render/vulkan/vk_utils.h"
+#include "render/vulkan/vk_initializers.h"
 
 #include <map>
 #include <fstream>
@@ -96,24 +97,15 @@ void AppInfo::detectFeatureSupport(vk::PhysicalDevice physicalDevice) {
     }
 }
 
-Application::Application(const std::filesystem::path& appDir):
-    Application(appDir, AppInfo{}) { }
-
-Application::Application(const std::filesystem::path& appDir, const AppInfo& appInfo):
-    appDir(appDir), appInfo(appInfo) { }
+Application::Application(
+        const std::filesystem::path& appDir,
+        const Window* window,
+        const AppInfo& appInfo):
+    appDir(appDir), window(window), appInfo(appInfo) { }
 
 Application::~Application() { }
 
-void Application::onUpdate(double deltaTime) {
-}
-
-void Application::onRender() {
-    drawFrame();
-}
-
-void Application::onInit(const Window* window) {
-    this->window = window;
-
+void Application::onInit() {
     initInstance("Default Application");
     initDebugMessenger();
     initSurface();
@@ -134,6 +126,23 @@ void Application::onInit(const Window* window) {
     initImGui();
 }
 
+void Application::onPrepare() {
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+}
+
+void Application::onUpdate(double deltaTime) {
+    updateImGui();
+}
+
+void Application::onRender() {
+    ImGui::Render();
+    ImGui::UpdatePlatformWindows();
+    ImGui::RenderPlatformWindowsDefault();
+    drawFrame();
+}
+
 void Application::onInputEvent(const InputEvent& event) {
     if (event.getSource() == EventSource::Mouse) {
         const auto& mouseButton = static_cast<const MouseButtonInputEvent&>(event);
@@ -146,6 +155,10 @@ void Application::onShutdown() {
     if (device) {
         device->waitIdle();
     }
+
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 
     cleanup();
 }
@@ -425,7 +438,7 @@ void Application::initImGui() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    // io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
     // io.ConfigViewportsNoAutoMerge = true;
@@ -433,8 +446,18 @@ void Application::initImGui() {
 
     ImGui::StyleColorsDark();
 
+    // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
+    ImGuiStyle& style = ImGui::GetStyle();
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        style.WindowRounding = 0.0f;
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    }
+
     // this initializes imgui for glfw
+    ASSERT(window->getGLFWwindow(), "Window must be initialized before initializing ImGui");
     ImGui_ImplGlfw_InitForVulkan(window->getGLFWwindow(), true);
+
     ImGui_ImplVulkan_InitInfo initInfo {
         .Instance = **instance,
         .PhysicalDevice = **physicalDevice,
@@ -446,7 +469,9 @@ void Application::initImGui() {
         .ImageCount = static_cast<uint32_t>(swapchainImages.size()),
         .MSAASamples = VkSampleCountFlagBits(vk::SampleCountFlagBits::e1),
         .UseDynamicRendering = true,
-        .PipelineRenderingCreateInfo = pipelineRenderingCreateInfo,
+        .PipelineRenderingCreateInfo = vk::PipelineRenderingCreateInfo{
+            .colorAttachmentCount = 1,
+            .pColorAttachmentFormats = &swapchainImageFormat},
         .CheckVkResultFn = [](VkResult err) {
             if (err != VK_SUCCESS) {
                 LOG_CORE_ERROR("Vulkan error during ImGui initialization: {}", vk::to_string(vk::Result(err)));
@@ -459,6 +484,8 @@ void Application::initImGui() {
     // ImGui_ImplVulkan_CreateFontsTexture(commandBuffer);
     // submit
     // ImGui_ImplVulkan_DestroyFontUploadObjects();
+
+    LOG_CORE_DEBUG("ImGui is successfully initialized");
 }
 
 void Application::buildCapabilitiesSummary() {
@@ -494,6 +521,86 @@ void Application::logCapabilitiesSummary() const {
         capsSummary.dynamicRendering,
         capsSummary.timelineSemaphores,
         capsSummary.sync2);
+}
+
+void Application::updateImGui() {
+    ImGui::Begin("Engine Stats");
+    ImGui::Text("GPU: %s", capsSummary.gpuName.c_str());
+    ImGui::Text("Swapchain: %ux%u  Images=%u",
+                swapchainExtent.width, swapchainExtent.height, capsSummary.swapImageCount);
+
+    ImGui::Separator();
+
+    static float clearColor[4] = {0.10f, 0.12f, 0.15f, 1.0f};
+    ImGui::ColorEdit4("Clear Color", clearColor);
+
+    static float scalar = 0.5f;
+    ImGui::SliderFloat("Scalar", &scalar, 0.0f, 1.0f);
+
+    static int mode = 0;
+    const char* modes[] = { "Mode A", "Mode B", "Mode C" };
+    ImGui::Combo("Mode", &mode, modes, IM_ARRAYSIZE(modes));
+
+    static bool enableFeature = true;
+    ImGui::Checkbox("Enable Feature", &enableFeature);
+
+    ImGui::Text("Frame: %.3f ms (%.1f FPS)",
+        1000.0f / ImGui::GetIO().Framerate,
+        ImGui::GetIO().Framerate);
+
+    static bool showDemo = false;
+    ImGui::Checkbox("Show Demo Window", &showDemo);
+    if (showDemo) {
+        ImGui::ShowDemoWindow(&showDemo);
+    }
+
+    ImGui::End();
+}
+
+void Application::drawBackground(const vk::raii::CommandBuffer& commandBuffer) {
+    // Default implementation does nothing
+}
+
+void Application::drawScene(const vk::raii::CommandBuffer& commandBuffer, uint32_t imageIndex) {
+    // Default implementation does nothing
+}
+
+void Application::drawImGui(const vk::raii::CommandBuffer& commandBuffer, uint32_t imageIndex) {
+    auto colorAttachment = vkinit::colorAttachmentInfo(
+        swapchainImageViews[imageIndex], vk::ImageLayout::eColorAttachmentOptimal);
+    auto renderingInfo = vkinit::renderingInfo(swapchainExtent, colorAttachment);
+
+    commandBuffer.beginRendering(renderingInfo);
+
+    auto drawData = ImGui::GetDrawData();
+    ASSERT(drawData, "No ImGui draw data");
+    ImGui_ImplVulkan_RenderDrawData(drawData, *commandBuffer);
+
+    commandBuffer.endRendering();
+    // auto io = ImGui::GetIO();
+    // static bool show_demo_window = true;
+    // static float f = 0.0f;
+    // static int counter = 0;
+    // ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+    // ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
+
+    // ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
+    // ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
+
+    // ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+    // ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
+
+    // if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+    //     counter++;
+    // ImGui::SameLine();
+    // ImGui::Text("counter = %d", counter);
+
+    // ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+    // ImGui::End();
+    
+    // ImGui::Render();
+    // ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *commandBuffer);
 }
 
 void Application::cleanup() {
