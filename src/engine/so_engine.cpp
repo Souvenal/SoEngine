@@ -76,8 +76,6 @@ void SoEngine::mainLoopFrame() {
             return;
         }
 
-        prepare();
-
         update();
 
         render();
@@ -85,10 +83,6 @@ void SoEngine::mainLoopFrame() {
         LOG_ERROR("Fatal error: {}", err.what());
         exitCode = ExitCode::FatalError;
     }
-}
-
-void SoEngine::prepare() {
-    app->onPrepare();
 }
 
 void SoEngine::update() {

@@ -39,7 +39,7 @@ public:
 						std::span<PoolSizeRatio> poolSizeRatios);
 	
 	void clearDescriptors();
-	std::vector<vk::raii::DescriptorSet> allocate(const vk::raii::Device& device,
+	vk::raii::DescriptorSets allocate(const vk::raii::Device& device,
 									 const vk::raii::DescriptorSetLayout& layout,
 									 const uint32_t layoutCount = 1);
 

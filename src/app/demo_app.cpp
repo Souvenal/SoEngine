@@ -24,13 +24,15 @@ void DemoApp::onInit() {
     appInfo.checkFeatureSupport(*instance, *physicalDevice);
     initLogicalDevice();
 
+    initDescriptorAllocator();
+    initMemoryAllocator();
+
+    initSwapchain();
+    initDrawImage();
+
     initCommandPools();
     initCommandBuffers();
 
-    initMemoryAllocator();
-    initSwapchain();
-
-    initDescriptorAllocator();
     initDescriptorSetLayouts();
 
     initPipelines();
@@ -49,21 +51,6 @@ void DemoApp::onInit() {
 
 void DemoApp::onShutdown() {
     Application::onShutdown();
-}
-
-void DemoApp::initSwapchain() {
-    Application::initSwapchain();
-
-    vk::Format drawImageFormat = vk::Format::eR16G16B16A16Sfloat;
-    vk::Extent3D drawImageExtent = {windowExtent.width, windowExtent.height, 1};
-    drawImage = AllocatedImage(
-        *device, memoryAllocator.allocator,
-        drawImageExtent, 1, vk::SampleCountFlagBits::e1,
-        drawImageFormat, vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst,
-        vk::ImageAspectFlagBits::eColor, MemoryType::DeviceLocal);
-
-    LOG_CORE_DEBUG("Initialized swapchain and draw image with format: {}", vk::to_string(drawImageFormat));
 }
 
 void DemoApp::initCommandBuffers() {
@@ -99,11 +86,7 @@ void DemoApp::initDescriptorAllocator() {
 }
 
 void DemoApp::initDescriptorSetLayouts() {
-    DescriptorLayoutBuilder builder;
-    builder.addBinding(0, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute);
-    drawImageDescriptorSetLayout = builder.build(*device);
-
-    LOG_CORE_DEBUG("Initialized descriptor set layouts");
+    Application::initDescriptorSetLayouts();
 }
 
 void DemoApp::initPipelines() {
@@ -111,46 +94,83 @@ void DemoApp::initPipelines() {
 }
 
 void DemoApp::initBackgroundPipelines() {
+    auto shadersDir = appDir / "shaders";
+    auto gradientShader = vkutil::loadShaderModule(*device, shadersDir / "gradient_color.spv");
+    auto skyShader = vkutil::loadShaderModule(*device, shadersDir / "sky.spv");
+
+    vk::PushConstantRange pushConstantRange{
+        .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        .offset = 0,
+        .size = sizeof(ComputePushConstants)};
     vk::PipelineLayoutCreateInfo computeLayout{
         .setLayoutCount = 1,
-        .pSetLayouts = &*drawImageDescriptorSetLayout};
+        .pSetLayouts = &*drawImageDescriptorSetLayout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushConstantRange};
     gradientPipelineLayout = device->createPipelineLayout(computeLayout);
 
-    auto shaderPath = appDir / "shaders" / "gradient.spv";
-    auto computeDrawShader = vkutil::loadShaderModule(*device, shaderPath.string());
-
-    vk::PipelineShaderStageCreateInfo computeStage{
+    // Create gradient effect
+    vk::PipelineShaderStageCreateInfo stageInfo{
         .stage = vk::ShaderStageFlagBits::eCompute,
-        .module = computeDrawShader,
+        .module = gradientShader,
         .pName = "compMain"};
 
     vk::ComputePipelineCreateInfo computePipelineInfo{
-        .stage = computeStage,
+        .stage = stageInfo,
         .layout = gradientPipelineLayout};
 
-    gradientPipeline = device->createComputePipeline(nullptr, computePipelineInfo);
+    ComputeEffect gradientEffect;
+    gradientEffect.name = "gradient";
+    gradientEffect.layout = gradientPipelineLayout;
+    gradientEffect.pipeline = device->createComputePipeline(nullptr, computePipelineInfo);
+    gradientEffect.data = {
+        .data1 = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f), // Top color
+        .data2 = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f), // Bottom color
+        .data3 = glm::vec4(0.0f),
+        .data4 = glm::vec4(0.0f)};
+
+    // Create sky effect - change the shader module only
+    computePipelineInfo.stage.module = skyShader;
+
+    ComputeEffect skyEffect;
+    skyEffect.name = "sky";
+    skyEffect.layout = gradientPipelineLayout;
+    skyEffect.pipeline = device->createComputePipeline(nullptr, computePipelineInfo);
+    skyEffect.data = {
+        .data1 = glm::vec4(0.1f, 0.2f, 0.4f, 0.97f), // Sky color + star threshold
+        .data2 = glm::vec4(0.0f),
+        .data3 = glm::vec4(0.0f),
+        .data4 = glm::vec4(0.0f)};
+
+    // Add the 2 background effects into the array
+    backgroundEffects.emplace_back(std::move(gradientEffect));
+    backgroundEffects.emplace_back(std::move(skyEffect));
+
+    // gradientPipeline = device->createComputePipeline(nullptr, computePipelineInfo);
 }
 
 void DemoApp::initDescriptorSets() {
-    drawImageDescriptorSets = globalDescriptorAllocator.allocate(*device, drawImageDescriptorSetLayout);
+    Application::initDescriptorSets();
+}
 
-    vk::DescriptorImageInfo imageInfo {
-        .sampler = {},
-        .imageView = drawImage.imageView,
-        .imageLayout = vk::ImageLayout::eGeneral
-    };
+void DemoApp::updateImGui() {
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
 
-    vk::WriteDescriptorSet drawImageWrite {
-        .dstSet = drawImageDescriptorSets[0],
-        .dstBinding = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = &imageInfo
-    };
-
-    device->updateDescriptorSets(drawImageWrite, {});
-
-    LOG_CORE_DEBUG("Initialized descriptor set for draw image");
+    if (ImGui::Begin("background")) {
+        ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
+    
+        ImGui::Text("Selected effect: %s", selected.name.c_str());
+    
+        ImGui::SliderInt("Effect Index", &currentBackgroundEffect,0, backgroundEffects.size() - 1);
+    
+        ImGui::InputFloat4("data1",(float*)& selected.data.data1);
+        ImGui::InputFloat4("data2",(float*)& selected.data.data2);
+        ImGui::InputFloat4("data3",(float*)& selected.data.data3);
+        ImGui::InputFloat4("data4",(float*)& selected.data.data4);
+    }
+    ImGui::End();
 }
 
 void DemoApp::drawFrame() {
@@ -208,7 +228,7 @@ void DemoApp::drawFrame() {
             vk::PipelineStageFlagBits2::eComputeShader, *semaphore, computeSignalValue);
         auto submitInfo = vkinit::submitInfo(
             commandBufferInfo, waitSubmitInfo, signalSubmitInfo);
-        graphicsQueue.submit2(submitInfo, {});
+        computeQueue.submit2(submitInfo, {});
     //<
     }
     // Graphics pass
@@ -280,10 +300,20 @@ void DemoApp::drawFrame() {
 } 
 
 void DemoApp::drawBackground(const vk::raii::CommandBuffer& commandBuffer) {
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *gradientPipeline);
+    ComputeEffect& effect = backgroundEffects[currentBackgroundEffect];
+
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, effect.pipeline);
     commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eCompute, *gradientPipelineLayout,
+        vk::PipelineBindPoint::eCompute, gradientPipelineLayout,
         0, *drawImageDescriptorSets[0], {});
+    
+    ComputePushConstants pushConstants{
+        .data1 = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f),
+        .data2 = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f)};
+    commandBuffer.pushConstants<decltype(effect.data)>(
+        gradientPipelineLayout, vk::ShaderStageFlagBits::eCompute,
+        0, effect.data);
+
     commandBuffer.dispatch(
         std::ceil(drawImage.imageExtent.width / 16.0f),
         std::ceil(drawImage.imageExtent.height / 16.0f),

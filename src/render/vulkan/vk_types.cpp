@@ -136,35 +136,24 @@ AllocatedImage::AllocatedImage(
 }
 
 AllocatedImage::AllocatedImage(AllocatedImage&& rhs):
-    device(rhs.device), allocator(rhs.allocator),
-    image(rhs.image), imageView(rhs.imageView),
-    allocation(rhs.allocation), imageExtent(rhs.imageExtent),
-    imageFormat(rhs.imageFormat)
-{
-    rhs.device = nullptr;
-    rhs.allocator = nullptr;
-    rhs.image = nullptr;
-    rhs.imageView = nullptr;
-    rhs.allocation = nullptr;
-    rhs.imageExtent = {};
-    rhs.imageFormat = {};
-}
+    device(std::exchange(rhs.device, nullptr)),
+    allocator(std::exchange(rhs.allocator, nullptr)),
+    image(std::exchange(rhs.image, nullptr)),
+    imageView(std::exchange(rhs.imageView, nullptr)),
+    allocation(std::exchange(rhs.allocation, nullptr)),
+    imageExtent(std::exchange(rhs.imageExtent, {})),
+    imageFormat(std::exchange(rhs.imageFormat, {})) { }
 
 AllocatedImage& AllocatedImage::operator=(AllocatedImage&& rhs) {
-    device = rhs.device;
-    allocator = rhs.allocator;
-    image = rhs.image;
-    imageView = rhs.imageView;
-    allocation = rhs.allocation;
-    imageExtent = rhs.imageExtent;
-    imageFormat = rhs.imageFormat;
-    rhs.device = nullptr;
-    rhs.allocator = nullptr;
-    rhs.image = nullptr;
-    rhs.imageView = nullptr;
-    rhs.allocation = nullptr;
-    rhs.imageExtent = {};
-    rhs.imageFormat = {};
+    if (this != &rhs) {
+        std::swap(device, rhs.device);
+        std::swap(allocator, rhs.allocator);
+        std::swap(image, rhs.image);
+        std::swap(imageView, rhs.imageView);
+        std::swap(allocation, rhs.allocation);
+        std::swap(imageExtent, rhs.imageExtent);
+        std::swap(imageFormat, rhs.imageFormat);
+    }
     return *this;
 }
 
@@ -173,13 +162,6 @@ AllocatedImage::~AllocatedImage() {
         device.destroyImageView(imageView);
     if (allocator != nullptr && image && allocation)
         vmaDestroyImage(allocator, image, allocation);
-    device = nullptr;
-    allocator = nullptr;
-    image = nullptr;
-    imageView = nullptr;
-    allocation = nullptr;
-    imageExtent = {};
-    imageFormat = {};
 }
 
 namespace vkutil

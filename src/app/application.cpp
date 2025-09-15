@@ -113,24 +113,24 @@ void Application::onInit() {
     selectPhysicalDevice();
     initLogicalDevice();
 
+    initDescriptorAllocator();
     initMemoryAllocator();
+
     initSwapchain();
+    initDrawImage();
 
     initCommandPools();
     initCommandBuffers();
 
-    initDescriptorAllocator();
+    initDescriptorSetLayouts();
+    
     initPipelines();
+
+    initDescriptorSets();
 
     initSyncObjects();
 
     initImGui();
-}
-
-void Application::onPrepare() {
-    ImGui_ImplVulkan_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
 }
 
 void Application::onUpdate(double deltaTime) {
@@ -138,9 +138,6 @@ void Application::onUpdate(double deltaTime) {
 }
 
 void Application::onRender() {
-    ImGui::Render();
-    ImGui::UpdatePlatformWindows();
-    ImGui::RenderPlatformWindowsDefault();
     drawFrame();
 }
 
@@ -179,6 +176,18 @@ void Application::recreateSwapchain() {
 
     initSwapchain();
     // createFramebuffers();
+
+    initDrawImage();
+    vk::DescriptorImageInfo imageInfo {
+        .imageView = drawImage.imageView,
+        .imageLayout = vk::ImageLayout::eGeneral};
+    vk::WriteDescriptorSet drawImageWrite {
+        .dstSet = drawImageDescriptorSets[0],
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eStorageImage,
+        .pImageInfo = &imageInfo};
+    device->updateDescriptorSets(drawImageWrite, {});
 }
 
 void Application::initInstance(const std::string& appName) {
@@ -240,7 +249,6 @@ void Application::initSurface() {
     surface = window->createSurface(*instance);
     auto framebufferSize = window->getFramebufferSize();
     swapchainExtent = vk::Extent2D { framebufferSize.width, framebufferSize.height };
-    windowExtent = window->getWindowSize();
 
     LOG_CORE_DEBUG("Vulkan surface is successfully created");
 }
@@ -369,19 +377,19 @@ void Application::initSwapchain() {
     }
 
     LOG_CORE_DEBUG("Swap chain is successfully created");
+}
 
-    // Create draw image based on window size
-    // drawImage = AllocatedImage(
-    //     *device, memoryAllocator.allocator,
-    //     {windowExtent.width, windowExtent.height, 1},
-    //     1, msaaSamples,
-    //     vk::Format::eR16G16B16A16Sfloat,
-    //     vk::ImageTiling::eOptimal,
-    //     vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
-    //     // vk::ImageUsageFlagBits::eStorage |
-    //     vk::ImageUsageFlagBits::eColorAttachment,
-    //     MemoryType::DeviceLocal
-    // );
+void Application::initDrawImage() {
+    ASSERT(window, "Window must be initialized before creating draw image");
+    vk::Format drawImageFormat = vk::Format::eR16G16B16A16Sfloat;
+    auto windowExtent = window->getWindowSize();
+    vk::Extent3D drawImageExtent = {windowExtent.width, windowExtent.height, 1};
+    drawImage = AllocatedImage(
+        *device, memoryAllocator.allocator,
+        drawImageExtent, 1, vk::SampleCountFlagBits::e1,
+        drawImageFormat, vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst,
+        vk::ImageAspectFlagBits::eColor, MemoryType::DeviceLocal);
 }
 
 void Application::initCommandPools() {
@@ -420,9 +428,48 @@ void Application::initDescriptorAllocator() {
 
 void Application::initPipelines() { }
 
-void Application::initDescriptorSetLayouts() { }
+void Application::initDescriptorSetLayouts() {
+    initDrawImageDescriptorSetLayout();
 
-void Application::initDescriptorSets() { }
+    LOG_CORE_DEBUG("Descriptor set layouts are successfully initialized");
+}
+
+void Application::initDrawImageDescriptorSetLayout() {
+    DescriptorLayoutBuilder builder;
+    builder.addBinding(0, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute);
+    drawImageDescriptorSetLayout = builder.build(*device);
+
+    LOG_CORE_DEBUG("Draw image descriptor set layout is successfully initialized");
+}
+
+void Application::initDescriptorSets() {
+    initDrawImageDescriptorSets();
+
+    LOG_CORE_DEBUG("Descriptor sets are successfully initialized");
+}
+
+void Application::initDrawImageDescriptorSets() {
+    drawImageDescriptorSets = globalDescriptorAllocator.allocate(*device, drawImageDescriptorSetLayout);
+    // At this point the descriptor set is allocated but no resources are bound to it
+    // It's like allocating an array but not filling it with data yet
+
+    // Now bind the drawImage.imageView to the descriptor set at binding 0
+    vk::DescriptorImageInfo imageInfo {
+        .imageView = drawImage.imageView,
+        .imageLayout = vk::ImageLayout::eGeneral
+    };
+
+    vk::WriteDescriptorSet drawImageWrite {
+        .dstSet = drawImageDescriptorSets[0],    // target container
+        .dstBinding = 0,                         // binding = 0 position
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eStorageImage,
+        .pImageInfo = &imageInfo               // resource to write
+    };
+
+    device->updateDescriptorSets(drawImageWrite, {});
+    // Now the descriptor set's binding 0 position is bound to drawImage.imageView
+}
 
 void Application::initSyncObjects() {
     vk::SemaphoreTypeCreateInfo semaphoreTypeCreateInfo{
@@ -533,6 +580,10 @@ void Application::logCapabilitiesSummary() const {
 }
 
 void Application::updateImGui() {
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
     ImGui::Begin("Engine Stats");
     ImGui::Text("GPU: %s", capsSummary.gpuName.c_str());
     ImGui::Text("Swapchain: %ux%u  Images=%u",
@@ -581,35 +632,15 @@ void Application::drawImGui(const vk::raii::CommandBuffer& commandBuffer, uint32
 
     commandBuffer.beginRendering(renderingInfo);
 
+    ImGui::Render();                        // gather draw commands
+    ImGui::UpdatePlatformWindows();         // for multi-viewport
+    ImGui::RenderPlatformWindowsDefault();  // for multi-viewport
+
     auto drawData = ImGui::GetDrawData();
     ASSERT(drawData, "No ImGui draw data");
     ImGui_ImplVulkan_RenderDrawData(drawData, *commandBuffer);
 
     commandBuffer.endRendering();
-    // auto io = ImGui::GetIO();
-    // static bool show_demo_window = true;
-    // static float f = 0.0f;
-    // static int counter = 0;
-    // ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-    // ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
-
-    // ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-    // ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-
-    // ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-    // ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
-
-    // if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-    //     counter++;
-    // ImGui::SameLine();
-    // ImGui::Text("counter = %d", counter);
-
-    // ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-    // ImGui::End();
-    
-    // ImGui::Render();
-    // ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *commandBuffer);
 }
 
 void Application::cleanup() {

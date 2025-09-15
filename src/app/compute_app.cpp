@@ -265,6 +265,7 @@ void ComputeApp::initShaderStorageBuffers() {
     std::uniform_real_distribution<float> dis(0.0f, 1.0f);
 
     std::vector<Particle> particles(computeAppInfo.particleCount);
+    auto windowExtent = window->getWindowSize();
     for (auto& particle : particles) {
         float r = 0.25f * sqrtf(dis(gen));
         float theta = dis(gen) * 2.0f * std::numbers::pi_v<float>;

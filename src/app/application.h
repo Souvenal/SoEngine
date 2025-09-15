@@ -64,7 +64,6 @@ public:
             const AppInfo& appInfo = AppInfo{});
     virtual ~Application() = 0;
     virtual void onInit();
-    virtual void onPrepare();
     virtual void onUpdate(double deltaTime);
     virtual void onRender();
     virtual void onInputEvent(const InputEvent& event);
@@ -96,7 +95,6 @@ protected:
     vk::raii::DebugUtilsMessengerEXT            debugMessenger { nullptr };
 
     vk::raii::SurfaceKHR                        surface { nullptr };
-    Window::Extent                              windowExtent {};
 
     std::unique_ptr<vk::raii::PhysicalDevice>   physicalDevice {};
     std::unique_ptr<vk::raii::Device>           device { nullptr };
@@ -108,6 +106,7 @@ protected:
     vk::raii::Queue     transferQueue   { nullptr };
 
     MemoryAllocator         memoryAllocator {};
+    DescriptorAllocator     globalDescriptorAllocator {};
 
     uint32_t    minImageCountInSwapchain {0};
     vk::raii::SwapchainKHR              swapchain { nullptr };
@@ -121,13 +120,13 @@ protected:
     vk::raii::RenderPass                renderPass { nullptr };
     std::vector<vk::raii::Framebuffer>  swapChainFramebuffers;
 
-    // AllocatedImage  drawImage;
-
     vk::raii::CommandPool                   graphicsCommandPool { nullptr };
     vk::raii::CommandPool                   computeCommandPool  { nullptr };
     vk::raii::CommandPool                   transferCommandPool { nullptr };
 
-    DescriptorAllocator     globalDescriptorAllocator {};
+    AllocatedImage                 drawImage;
+    vk::raii::DescriptorSetLayout  drawImageDescriptorSetLayout { nullptr };
+    vk::raii::DescriptorSets       drawImageDescriptorSets { nullptr };
 
     vk::raii::Semaphore                 semaphore   { nullptr };
     uint64_t                            timelineValue {0};
@@ -188,6 +187,11 @@ protected:
     virtual void initSwapchain();
 
     /**
+     * @brief Initializes the draw image used for rendering
+     */
+    virtual void initDrawImage();
+
+    /**
      * @brief Initializes the command pools for graphics, compute, and transfer operations
      * @note This function should be called after the logical device is created
      */
@@ -222,6 +226,11 @@ protected:
     virtual void initDescriptorSetLayouts();
 
     /**
+     * @brief Initializes the descriptor set layout for the draw image
+     */
+    virtual void initDrawImageDescriptorSetLayout();
+
+    /**
      * @brief Initializes the graphics pipeline
      * @note This function should set up the pipeline layouts and pipelines
      */
@@ -231,6 +240,11 @@ protected:
      * @brief Initializes the descriptor sets
      */
     virtual void initDescriptorSets();
+
+    /**
+     * @brief Initializes the descriptor sets for the draw image
+     */
+    virtual void initDrawImageDescriptorSets();
 
     /**
      * @brief Initializes synchronization objects (semaphores and fences)

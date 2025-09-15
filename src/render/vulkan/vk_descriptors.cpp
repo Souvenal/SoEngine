@@ -60,7 +60,7 @@ void DescriptorAllocator::clearDescriptors() {
 	pool.reset();
 }
 
-std::vector<vk::raii::DescriptorSet> DescriptorAllocator::allocate(
+vk::raii::DescriptorSets DescriptorAllocator::allocate(
     const vk::raii::Device& device,
     const vk::raii::DescriptorSetLayout& layout,
     const uint32_t layoutCount
@@ -72,7 +72,7 @@ std::vector<vk::raii::DescriptorSet> DescriptorAllocator::allocate(
         .pSetLayouts = layouts.data()
     };
 
-    return device.allocateDescriptorSets(allocInfo);
+    return vk::raii::DescriptorSets(device, allocInfo);
 }
 
 vk::DescriptorPool DescriptorAllocator::getPool() const {

@@ -4,11 +4,10 @@ void compMain(
     uint3  globalID   : SV_DispatchThreadID,
     uint3  localID    : SV_GroupThreadID,
     uint3  groupID    : SV_GroupID,
+    // 绑定：set = 0, binding = 0 (Vulkan); register(u0, space0) (DX)
     [[vk::binding(0, 0)]] RWTexture2D<float4> image
 )
 {
-    // 绑定：set = 0, binding = 0 (Vulkan); register(u0, space0) (DX)
-
     uint2 size;
     image.GetDimensions(size.x, size.y);
 

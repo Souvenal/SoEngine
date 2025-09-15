@@ -75,9 +75,9 @@ void transitionImageLayout(const vk::raii::CommandBuffer& commandBuffer,
         srcAccessMask = {};
         dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
     }
-    // General -> TransferSrcOptimal
+    // General -> TransferSrcOptimal (after written by compute shader, before being read by transfer)
     else if (oldLayout == vk::ImageLayout::eGeneral && newLayout == vk::ImageLayout::eTransferSrcOptimal) {
-        srcStageMask = vk::PipelineStageFlagBits2::eAllCommands;
+        srcStageMask = vk::PipelineStageFlagBits2::eComputeShader;
         dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
         srcAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite;
         dstAccessMask = vk::AccessFlagBits2::eTransferRead;
