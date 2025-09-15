@@ -1,13 +1,11 @@
 #pragma once
 
 #include "application.h"
-#include "common/vk_common.h"
 #include "resource/model_object.h"
 
 #include <ktxvulkan.h>
 
 struct ModelAppInfo {
-    vk::SampleCountFlagBits msaaSamples { vk::SampleCountFlagBits::e1 };
     const uint32_t maxObjects { 3 };
     const std::string modelPath { "models/viking_room.obj" };
     const std::string texturePath { "models/viking_room/textures/viking_room.ktx2" };
@@ -54,6 +52,9 @@ protected:
 
     vk::raii::CommandBuffers graphicsCommandBuffers { nullptr };
 
+    vk::raii::PipelineLayout graphicsPipelineLayout { nullptr };
+    vk::raii::Pipeline      graphicsPipeline { nullptr};
+
     AllocatedImage  colorImage {};
     AllocatedImage  depthImage {};
 
@@ -77,6 +78,7 @@ protected:
     float maxZ { std::numeric_limits<float>::min() };
 
 protected:
+
     void initCommandBuffers() override;
     
     void initDescriptorAllocator() override;
@@ -85,7 +87,9 @@ protected:
 
     void initRenderPass() override;
 
-    void initGraphicsPipeline() override;
+    void initPipelines() override;
+
+    void initGraphicsPipeline();
 
     void initColorResources();
 

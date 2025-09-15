@@ -53,7 +53,6 @@ void ModelApp::onInit() {
     initSurface();
 
     selectPhysicalDevice();
-    modelAppInfo.msaaSamples = vkutil::getMaxUsableSampleCount(*physicalDevice);
 
     appInfo.checkFeatureSupport(*instance, *physicalDevice);
 
@@ -70,7 +69,7 @@ void ModelApp::onInit() {
     }
     initDescriptorAllocator();
     initDescriptorSetLayouts();
-    initGraphicsPipeline();
+    initPipelines();
 
     initColorResources();
     initDepthResources();
@@ -137,7 +136,7 @@ void ModelApp::initCommandBuffers() {
 void ModelApp::initRenderPass() {
     vk::AttachmentDescription colorAttachment {
         .format = swapchainImageFormat,
-        .samples = modelAppInfo.msaaSamples,
+        .samples = appInfo.msaaSamples,
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = vk::AttachmentStoreOp::eStore,
         .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
@@ -153,7 +152,7 @@ void ModelApp::initRenderPass() {
 
     vk::AttachmentDescription depthAttachment {
         .format = vkutil::findDepthFormat(*physicalDevice),
-        .samples = modelAppInfo.msaaSamples,
+        .samples = appInfo.msaaSamples,
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = vk::AttachmentStoreOp::eDontCare,
         .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
@@ -247,6 +246,11 @@ void ModelApp::initDescriptorSetLayouts() {
     LOG_CORE_DEBUG("Draw image descriptor set layout is successfully initialized");
 }
 
+void ModelApp::initPipelines() {
+    initGraphicsPipeline();
+    LOG_CORE_DEBUG("Pipelines are successfully initialized");
+}
+
 void ModelApp::initGraphicsPipeline() {
     auto shadersDir = appDir / "shaders";
     std::string shaderPath = (shadersDir / "shader.spv").string();
@@ -332,7 +336,7 @@ void ModelApp::initGraphicsPipeline() {
 
     // Multisampling
     vk::PipelineMultisampleStateCreateInfo multisampling {
-        .rasterizationSamples = modelAppInfo.msaaSamples,
+        .rasterizationSamples = appInfo.msaaSamples,
         .sampleShadingEnable = vk::True,
         .minSampleShading = 0.2f, // min fraction for sample shading; closer one is smoother
         .pSampleMask = nullptr, // Optional
@@ -445,7 +449,7 @@ void ModelApp::initColorResources() {
     vk::Format colorFormat = swapchainImageFormat;
     colorImage = AllocatedImage(*device, memoryAllocator.allocator,
         {swapchainExtent.width, swapchainExtent.height, 1},
-        1, modelAppInfo.msaaSamples,
+        1, appInfo.msaaSamples,
         colorFormat, vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
         vk::ImageAspectFlagBits::eColor,
@@ -458,7 +462,7 @@ void ModelApp::initDepthResources() {
     vk::Format depthFormat = vkutil::findDepthFormat(*physicalDevice);
     depthImage = AllocatedImage(*device, memoryAllocator.allocator,
         {swapchainExtent.width, swapchainExtent.height, 1},
-        1, modelAppInfo.msaaSamples,
+        1, appInfo.msaaSamples,
         depthFormat, vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eDepthStencilAttachment,
         vk::ImageAspectFlagBits::eDepth,

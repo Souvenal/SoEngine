@@ -43,6 +43,9 @@ protected:
     vk::raii::PipelineLayout            computePipelineLayout { nullptr };
     vk::raii::Pipeline                  computePipeline { nullptr };
 
+    vk::raii::PipelineLayout            graphicsPipelineLayout { nullptr };
+    vk::raii::Pipeline                  graphicsPipeline { nullptr };
+
     std::vector<AllocatedBuffer>       uniformBuffers;
     std::vector<AllocatedBuffer>       shaderStorageBuffers;
 
@@ -58,9 +61,11 @@ protected:
 
     void initDescriptorSetLayouts() override;
 
+    void initPipelines() override;
+
     void initComputePipeline();
 
-    void initGraphicsPipeline() override;
+    void initGraphicsPipeline();
 
     void initUniformBuffers();
 

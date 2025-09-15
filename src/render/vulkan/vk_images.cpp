@@ -52,19 +52,38 @@ void transitionImageLayout(const vk::raii::CommandBuffer& commandBuffer,
     vk::Flags<vk::AccessFlagBits2> srcAccessMask;
     vk::Flags<vk::AccessFlagBits2> dstAccessMask;
 
-    if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal) {
+    // Undefined -> General (for storage image or general usage)
+    if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eGeneral) {
+        srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
+        dstStageMask = vk::PipelineStageFlagBits2::eAllCommands;
+        srcAccessMask = {};
+        dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite;
+    }
+    // Undefined -> TransferDstOptimal (for copying from staging buffer)
+    else if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal) {
         srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
         dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
         srcAccessMask = {};
         dstAccessMask = vk::AccessFlagBits2::eTransferWrite;
-    } else if (oldLayout == vk::ImageLayout::eUndefined &&
+    }
+    //  Undefined -> DepthStencilAttachmentOptimal (for depth buffer)
+    else if (oldLayout == vk::ImageLayout::eUndefined &&
                (newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal ||
                 newLayout == vk::ImageLayout::eDepthAttachmentOptimal)) {
         srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
         dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests;
         srcAccessMask = {};
         dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
-    } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+    }
+    // General -> TransferSrcOptimal
+    else if (oldLayout == vk::ImageLayout::eGeneral && newLayout == vk::ImageLayout::eTransferSrcOptimal) {
+        srcStageMask = vk::PipelineStageFlagBits2::eAllCommands;
+        dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
+        srcAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite;
+        dstAccessMask = vk::AccessFlagBits2::eTransferRead;
+    }
+    // TransferDstOptimal -> ShaderReadOnlyOptimal (for sampling from the image)
+    else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
         srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
         dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
         srcAccessMask = vk::AccessFlagBits2::eTransferWrite;

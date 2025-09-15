@@ -19,7 +19,7 @@
 
 struct AppInfo {
     const uint32_t maxFramesInFlight { 2 };
-    vk::SampleCountFlags msaaSamples { vk::SampleCountFlagBits::e1 };
+    vk::SampleCountFlagBits msaaSamples { vk::SampleCountFlagBits::e1 };
     bool dynamicRenderingSupported      { false };
     bool timelineSemaphoresSupported    { false };
     bool synchronization2Supported      { false };
@@ -123,17 +123,14 @@ protected:
 
     // AllocatedImage  drawImage;
 
-    vk::raii::PipelineLayout            graphicsPipelineLayout { nullptr };
-    vk::raii::Pipeline                  graphicsPipeline { nullptr };
-
     vk::raii::CommandPool                   graphicsCommandPool { nullptr };
     vk::raii::CommandPool                   computeCommandPool  { nullptr };
     vk::raii::CommandPool                   transferCommandPool { nullptr };
 
     DescriptorAllocator     globalDescriptorAllocator {};
 
-    vk::raii::Semaphore     semaphore   { nullptr };
-    uint64_t                timelineValue {0};
+    vk::raii::Semaphore                 semaphore   { nullptr };
+    uint64_t                            timelineValue {0};
     std::vector<vk::raii::Fence>        inFlightFences;
 
     size_t                  currentFrame {0};
@@ -200,7 +197,7 @@ protected:
      * @brief Initializes the command buffers for graphics, compute, and transfer operations
      * @note This function should be called after the command pools are created
      */
-    virtual void initCommandBuffers() = 0;
+    virtual void initCommandBuffers();
 
     /**
      * @brief Initializes the render pass
@@ -222,18 +219,18 @@ protected:
     /**
      * @brief Initializes the descriptor set layouts
      */
-    virtual void initDescriptorSetLayouts() = 0;
+    virtual void initDescriptorSetLayouts();
 
     /**
      * @brief Initializes the graphics pipeline
-     * @note This function should set up the pipeline layout and create the graphics pipeline
+     * @note This function should set up the pipeline layouts and pipelines
      */
-    virtual void initGraphicsPipeline() = 0;
+    virtual void initPipelines();
 
     /**
      * @brief Initializes the descriptor sets
      */
-    virtual void initDescriptorSets() = 0;
+    virtual void initDescriptorSets();
 
     /**
      * @brief Initializes synchronization objects (semaphores and fences)

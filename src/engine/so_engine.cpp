@@ -3,6 +3,7 @@
 #include "utils/logging.h"
 #include "app/model_app.h"
 #include "app/compute_app.h"
+#include "app/demo_app.h"
 
 SoEngine::SoEngine(const std::filesystem::path& appDir)
     : appDir(appDir) {
@@ -32,10 +33,12 @@ void SoEngine::initialize() {
     }
 
     AppInfo appInfo{};
-    ComputeAppInfo computeAppInfo{ 800'000 };
-    app = std::make_unique<ComputeApp>(appDir, window.get(), appInfo, computeAppInfo);
+    // ComputeAppInfo computeAppInfo{ 800'000 };
+    // app = std::make_unique<ComputeApp>(appDir, window.get(), appInfo, computeAppInfo);
     // ModelAppInfo modelAppInfo{};
     // app = std::make_unique<ModelApp>(appDir, window.get(), appInfo, modelAppInfo);
+    DemoAppInfo demoAppInfo{};
+    app = std::make_unique<DemoApp>(appDir, window.get(), appInfo, demoAppInfo);
     if (!app) {
         LOG_ERROR("Failed to create application");
         exitCode = ExitCode::FatalError;

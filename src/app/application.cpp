@@ -17,6 +17,7 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
     void* pUserData) {
     if (severity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning) {
         // std::println(std::cerr, "Validation layer: type {} msg: {}\n", to_string(messageType), pCallbackData->pMessage);
+        printf("\n");
     }
     // indicate if the call that triggered this callback should be aborted
     return vk::False;
@@ -116,10 +117,10 @@ void Application::onInit() {
     initSwapchain();
 
     initCommandPools();
-    // initCommandBuffers();
+    initCommandBuffers();
 
     initDescriptorAllocator();
-    initGraphicsPipeline();
+    initPipelines();
 
     initSyncObjects();
 
@@ -316,7 +317,7 @@ void Application::initSwapchain() {
         .imageColorSpace = vk::ColorSpaceKHR::eSrgbNonlinear,
         .imageExtent = swapchainExtent,
         .imageArrayLayers = 1,  // the amount of layers each image consists of, always 1 unless developing a stereoscopic 3D app
-        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,   // operations using the images in the swap chain for
+        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst,
         .preTransform = surfaceCapabilities.currentTransform,
         .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
         .presentMode = vkutil::chooseSwapPresentMode(physicalDevice->getSurfacePresentModesKHR(*surface)),
@@ -403,6 +404,8 @@ void Application::initCommandPools() {
     LOG_CORE_DEBUG("Command pools are successfully initialized");
 }
 
+void Application::initCommandBuffers() { }
+
 void Application::initRenderPass() { }
 
 void Application::initFramebuffers() { }
@@ -414,6 +417,12 @@ void Application::initDescriptorAllocator() {
 
     globalDescriptorAllocator = DescriptorAllocator(*device, appInfo.maxFramesInFlight, sizes);
 }
+
+void Application::initPipelines() { }
+
+void Application::initDescriptorSetLayouts() { }
+
+void Application::initDescriptorSets() { }
 
 void Application::initSyncObjects() {
     vk::SemaphoreTypeCreateInfo semaphoreTypeCreateInfo{

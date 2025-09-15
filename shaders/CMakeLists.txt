@@ -60,5 +60,6 @@ endfunction()
 
 compile_slang(shader.slang vertMain fragMain)
 compile_slang(compute.slang vertMain fragMain compMain)
+compile_slang(gradient.slang compMain)
 
 add_dependencies(${TARGET} compile_shaders)

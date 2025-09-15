@@ -52,8 +52,7 @@ void ComputeApp::onInit() {
     // }
     initDescriptorAllocator();
     initDescriptorSetLayouts();
-    initComputePipeline();
-    initGraphicsPipeline();
+    initPipelines();
     
     // if (!appInfo.profileSupported && !appInfo.dynamicRenderingSupported) {
     //     initFramebuffers();
@@ -120,6 +119,12 @@ void ComputeApp::initDescriptorSetLayouts() {
     computeDescriptorSetLayout = builder.build(*device);
 
     LOG_CORE_DEBUG("Compute descriptor set layout is successfully initialized");
+}
+
+void ComputeApp::initPipelines() {
+    initComputePipeline();
+    initGraphicsPipeline();
+    LOG_CORE_DEBUG("Pipelines are successfully initialized");
 }
 
 void ComputeApp::initComputePipeline() {
