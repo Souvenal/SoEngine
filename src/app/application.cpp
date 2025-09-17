@@ -98,6 +98,15 @@ void AppInfo::detectFeatureSupport(vk::PhysicalDevice physicalDevice) {
     }
 }
 
+Application::ImmediateSubmitContext::ImmediateSubmitContext(
+        const vk::raii::Device& device, uint32_t queueFamilyIndex):
+    commandPool(
+        device,
+        vk::CommandPoolCreateInfo{
+            .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+            .queueFamilyIndex = queueFamilyIndex}),
+    fence(device, vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled}) { }
+
 Application::Application(
         const std::filesystem::path& appDir,
         const Window* window,
@@ -178,6 +187,7 @@ void Application::recreateSwapchain() {
     // createFramebuffers();
 
     initDrawImage();
+    initDepthImage();
     vk::DescriptorImageInfo imageInfo {
         .imageView = drawImage.imageView,
         .imageLayout = vk::ImageLayout::eGeneral};
@@ -188,6 +198,53 @@ void Application::recreateSwapchain() {
         .descriptorType = vk::DescriptorType::eStorageImage,
         .pImageInfo = &imageInfo};
     device->updateDescriptorSets(drawImageWrite, {});
+}
+
+GPUMeshBuffers Application::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices) const {
+    const size_t vertexBufferSize = vertices.size() * sizeof(Vertex);
+    const size_t indexBufferSize = indices.size() * sizeof(uint32_t);
+
+    GPUMeshBuffers newSurface;
+
+    //create vertex buffer
+    newSurface.vertexBuffer = AllocatedBuffer(
+            memoryAllocator.allocator, queueFamilyIndices, vertexBufferSize,
+            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+            MemoryType::DeviceLocal);
+
+    //find the adress of the vertex buffer
+    vk::BufferDeviceAddressInfo deviceAdressInfo{
+        .buffer = newSurface.vertexBuffer.buffer};
+    newSurface.vertexBufferAddress = device->getBufferAddress(deviceAdressInfo);
+
+    //create index buffer
+    newSurface.indexBuffer = AllocatedBuffer(
+            memoryAllocator.allocator, queueFamilyIndices, indexBufferSize,
+            vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+            MemoryType::DeviceLocal);
+
+    AllocatedBuffer stagingBuffer = AllocatedBuffer(
+            memoryAllocator.allocator, queueFamilyIndices, vertexBufferSize + indexBufferSize,
+            vk::BufferUsageFlagBits::eTransferSrc,
+            MemoryType::HostVisible);
+    stagingBuffer.write(vertices.data(), vertices.size(), 0);
+    stagingBuffer.write(indices.data(), indices.size(), vertexBufferSize);
+
+    immediateSubmitTransfer([&](const vk::raii::CommandBuffer& cmd) {
+        vk::BufferCopy vertexCopy {
+            .srcOffset = 0,
+            .dstOffset = 0,
+            .size = vertexBufferSize};
+        vkutil::copyAllocatedBuffer(cmd, stagingBuffer, newSurface.vertexBuffer, vertexCopy);
+
+        vk::BufferCopy indexCopy {
+            .srcOffset = vertexBufferSize,
+            .dstOffset = 0,
+            .size = indexBufferSize};
+        vkutil::copyAllocatedBuffer(cmd, stagingBuffer, newSurface.indexBuffer, indexCopy);
+    });
+
+    return newSurface;
 }
 
 void Application::initInstance(const std::string& appName) {
@@ -388,26 +445,42 @@ void Application::initDrawImage() {
         *device, memoryAllocator.allocator,
         drawImageExtent, 1, vk::SampleCountFlagBits::e1,
         drawImageFormat, vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst,
+        vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eColorAttachment,
         vk::ImageAspectFlagBits::eColor, MemoryType::DeviceLocal);
+}
+
+void Application::initDepthImage() {
+    depthImage = AllocatedImage(
+        *device, memoryAllocator.allocator,
+        drawImage.imageExtent, 1, vk::SampleCountFlagBits::e1,
+        vk::Format::eD32Sfloat, vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eDepthStencilAttachment,
+        vk::ImageAspectFlagBits::eDepth,
+        MemoryType::DeviceLocal);
 }
 
 void Application::initCommandPools() {
     vk::CommandPoolCreateInfo graphicsCommandPoolInfo {
         .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-        .queueFamilyIndex = queueFamilyIndices.graphicsFamily.value()
-    };
+        .queueFamilyIndex = queueFamilyIndices.graphicsFamily.value()};
     graphicsCommandPool = vk::raii::CommandPool(*device, graphicsCommandPoolInfo);
+
     vk::CommandPoolCreateInfo computeCommandPoolInfo {
         .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-        .queueFamilyIndex = queueFamilyIndices.computeFamily.value()
-    };
+        .queueFamilyIndex = queueFamilyIndices.computeFamily.value()};
     computeCommandPool = vk::raii::CommandPool(*device, computeCommandPoolInfo);
+
     vk::CommandPoolCreateInfo transferCommandPoolInfo {
         .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-        .queueFamilyIndex = queueFamilyIndices.transferFamily.value()
-    };
+        .queueFamilyIndex = queueFamilyIndices.transferFamily.value()};
     transferCommandPool = vk::raii::CommandPool(*device, transferCommandPoolInfo);
+
+    graphicsImmContext = std::make_unique<ImmediateSubmitContext>(
+        *device, queueFamilyIndices.graphicsFamily.value());
+    transferImmContext = std::make_unique<ImmediateSubmitContext>(
+        *device, queueFamilyIndices.transferFamily.value());
+    computeImmContext = std::make_unique<ImmediateSubmitContext>(
+        *device, queueFamilyIndices.computeFamily.value());
 
     LOG_CORE_DEBUG("Command pools are successfully initialized");
 }
@@ -544,6 +617,8 @@ void Application::initImGui() {
     LOG_CORE_DEBUG("ImGui is successfully initialized");
 }
 
+void Application::initAssets() { }
+
 void Application::buildCapabilitiesSummary() {
     auto props = physicalDevice->getProperties();
     capsSummary.gpuName.assign(
@@ -618,6 +693,10 @@ void Application::updateImGui() {
 }
 
 void Application::drawBackground(const vk::raii::CommandBuffer& commandBuffer) {
+    // Default implementation does nothing
+}
+
+void Application::drawGeometry(const vk::raii::CommandBuffer& commandBuffer) {
     // Default implementation does nothing
 }
 
@@ -739,7 +818,11 @@ void Application::dumpAllocatedBuffer(
 
     // 2. 拷贝数据到 staging buffer
     auto cmd = vkutil::beginSingleTimeCommands(*device, transferCommandPool);
-    vkutil::copyAllocatedBuffer(cmd, srcBuffer, stagingBuffer, bufferSize);
+    vk::BufferCopy copyRegion{
+        .srcOffset = 0,
+        .dstOffset = 0,
+        .size = bufferSize};
+    vkutil::copyAllocatedBuffer(cmd, srcBuffer, stagingBuffer, copyRegion);
     vkutil::endSingleTimeCommands(cmd, transferQueue);
 
     // 3. 映射内存

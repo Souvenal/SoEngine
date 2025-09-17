@@ -34,13 +34,15 @@ add_subdirectory(shaders)
 #     COMMENT "Copying texture directory to build directory"
 # )
 
-set(MODEL_SOURCE_DIR "${PROJECT_SOURCE_DIR}/models")
-set(MODEL_BINARY_DIR "${PROJECT_SOURCE_DIR}/target/models")
-add_custom_target(copy_models ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${MODEL_BINARY_DIR}
+set(ASSETS_SOURCE_DIR "${PROJECT_SOURCE_DIR}/assets")
+set(ASSETS_BINARY_DIR "${PROJECT_SOURCE_DIR}/target/assets")
+add_custom_target(copy_assets ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${ASSETS_BINARY_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${MODEL_SOURCE_DIR}
-        ${MODEL_BINARY_DIR}
-    DEPENDS ${MODEL_SOURCE_DIR}
-    COMMENT "Copying model directory to build directory"
+        ${ASSETS_SOURCE_DIR}
+        ${ASSETS_BINARY_DIR}
+    DEPENDS ${ASSETS_SOURCE_DIR}
+    COMMENT "Copying assets directory to build directory"
 )
+
+add_dependencies(${TARGET} copy_assets)

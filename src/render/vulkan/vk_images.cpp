@@ -47,6 +47,8 @@ void transitionImageLayout(const vk::raii::CommandBuffer& commandBuffer,
                            vk::ImageLayout newLayout,
                            const vk::ImageSubresourceRange& subresourceRange)
 {
+    // LOG_CORE_DEBUG("Transitioning image layout from {} to {}", vk::to_string(oldLayout), vk::to_string(newLayout));
+
     vk::PipelineStageFlagBits2 srcStageMask;
     vk::PipelineStageFlagBits2 dstStageMask;
     vk::Flags<vk::AccessFlagBits2> srcAccessMask;
@@ -81,6 +83,13 @@ void transitionImageLayout(const vk::raii::CommandBuffer& commandBuffer,
         dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
         srcAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite;
         dstAccessMask = vk::AccessFlagBits2::eTransferRead;
+    }
+    // General -> ColorAttachmentOptimal (after written by compute shader, before being written by fragment shader)
+    else if (oldLayout == vk::ImageLayout::eGeneral && newLayout == vk::ImageLayout::eColorAttachmentOptimal) {
+        srcStageMask = vk::PipelineStageFlagBits2::eComputeShader;
+        dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+        srcAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite;
+        dstAccessMask = vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite;
     }
     // TransferDstOptimal -> ShaderReadOnlyOptimal (for sampling from the image)
     else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {

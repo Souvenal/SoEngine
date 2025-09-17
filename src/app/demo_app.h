@@ -1,6 +1,7 @@
 #pragma once
 
 #include "application.h"
+#include "render/vulkan/vk_loader.h"
 
 struct DemoAppInfo {
 };
@@ -58,19 +59,24 @@ protected:
         ComputeEffect& operator=(const ComputeEffect&) = delete;
     };
 
-
     DemoAppInfo demoAppInfo;
 
     vk::raii::CommandBuffers        graphicsCommandBuffers { nullptr };
     vk::raii::CommandBuffers        computeCommandBuffers  { nullptr };
 
     vk::raii::PipelineLayout        gradientPipelineLayout { nullptr };
-    // vk::raii::Pipeline              gradientPipeline { nullptr };
 
     std::vector<ComputeEffect>       backgroundEffects {};
-    int                              currentBackgroundEffect {0};
+    int   currentBackgroundEffect {0};
+
+    vk::raii::PipelineLayout        meshPipelineLayout { nullptr };
+    vk::raii::Pipeline              meshPipeline { nullptr };
+
+    std::vector<std::shared_ptr<MeshAsset>> testMeshes;
 
 protected:
+    void initLogicalDevice() override;
+
     void initCommandBuffers() override;
 
     void initDescriptorAllocator() override;
@@ -79,15 +85,21 @@ protected:
 
     void initPipelines() override;
 
+    void initMeshPipeline();
+
     void initBackgroundPipelines();
 
     void initDescriptorSets() override;
+
+    void initAssets() override;
 
     void updateImGui() override;
 
     void drawFrame() override;
 
     void drawBackground(const vk::raii::CommandBuffer& commandBuffer) override;
+
+    void drawGeometry(const vk::raii::CommandBuffer& commandBuffer) override;
 
     // void drawScene(const vk::raii::CommandBuffer& commandBuffer, uint32_t imageIndex) override;
 };

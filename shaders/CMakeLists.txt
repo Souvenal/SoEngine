@@ -58,7 +58,7 @@ function(compile_slang SHADER_SOURCE)
     add_dependencies(compile_shaders ${SHADER_TARGET})
 endfunction()
 
-compile_slang(shader.slang vertMain fragMain)
+compile_slang(mesh.slang vertMain fragMain)
 compile_slang(compute.slang vertMain fragMain compMain)
 compile_slang(gradient.slang compMain)
 compile_slang(gradient_color.slang compMain)

@@ -15,6 +15,9 @@ struct QueueFamilyIndices {
     [[nodiscard]] bool isComplete() const;
 };
 
+/**
+ * @brief RAII wrapper around Vulkan Memory Allocator (VMA).
+ */
 class MemoryAllocator {
 public:
     VmaAllocator allocator  { nullptr };
@@ -46,13 +49,11 @@ public:
     AllocatedBuffer() = default;
     AllocatedBuffer(const AllocatedBuffer&) = delete;
     AllocatedBuffer& operator=(const AllocatedBuffer&) = delete;
-    AllocatedBuffer(AllocatedBuffer&& rhs);
+    AllocatedBuffer(AllocatedBuffer&& rhs) noexcept;
     AllocatedBuffer& operator=(AllocatedBuffer&& rhs);
-    AllocatedBuffer(VmaAllocator allocator,
-                    const QueueFamilyIndices& indices,
-                    vk::DeviceSize size,
-                    vk::BufferUsageFlags usage,
-                    MemoryType memoryType); 
+    AllocatedBuffer(
+            VmaAllocator allocator, const QueueFamilyIndices& indices,
+            vk::DeviceSize size, vk::BufferUsageFlags usage, MemoryType memoryType); 
     ~AllocatedBuffer();
 
     template<typename T>
@@ -99,16 +100,38 @@ private:
     VmaAllocator    allocator   { nullptr };
 };
 
+struct Vertex {
+	glm::vec3 position;
+	float uvX;         // for alignment
+	glm::vec3 normal;
+	float uvY;
+	glm::vec4 color;
+};
+
+// holds the resources needed for a mesh
+struct GPUMeshBuffers {
+    AllocatedBuffer indexBuffer;
+    AllocatedBuffer vertexBuffer;
+    vk::DeviceAddress vertexBufferAddress;
+};
+
+// push constants for our mesh object draws
+struct GPUDrawPushConstants {
+    glm::mat4 worldMatrix;
+    vk::DeviceAddress vertexBuffer;
+};
+
 namespace vkutil
 {
 
-[[nodiscard]]
-QueueFamilyIndices findQueueFamilies(const vk::raii::PhysicalDevice& physicalDevice,
-                                     const vk::raii::SurfaceKHR& surface);
+[[nodiscard]] QueueFamilyIndices findQueueFamilies(
+        const vk::raii::PhysicalDevice& physicalDevice,
+        const vk::raii::SurfaceKHR& surface);
 
-void copyAllocatedBuffer(const vk::raii::CommandBuffer& commandBuffer,
-                         const AllocatedBuffer& src,
-                         const AllocatedBuffer& dst,
-                         vk::DeviceSize size);
+void copyAllocatedBuffer(
+        const vk::raii::CommandBuffer& commandBuffer,
+        const AllocatedBuffer& src,
+        const AllocatedBuffer& dst,
+        vk::BufferCopy copyRegion);
 
 }   // namespace vkutil

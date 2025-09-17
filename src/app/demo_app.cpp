@@ -3,6 +3,7 @@
 #include "render/vulkan/vk_images.h"
 #include "render/vulkan/vk_pipelines.h"
 #include "render/vulkan/vk_initializers.h"
+#include "render/vulkan/vk_utils.h"
 
 DemoApp::DemoApp(
         const std::filesystem::path& appDir,
@@ -29,6 +30,7 @@ void DemoApp::onInit() {
 
     initSwapchain();
     initDrawImage();
+    initDepthImage();
 
     initCommandPools();
     initCommandBuffers();
@@ -43,6 +45,8 @@ void DemoApp::onInit() {
 
     initImGui();
 
+    initAssets();
+
     buildCapabilitiesSummary();
     logCapabilitiesSummary();
 
@@ -51,6 +55,27 @@ void DemoApp::onInit() {
 
 void DemoApp::onShutdown() {
     Application::onShutdown();
+}
+
+void DemoApp::initLogicalDevice() {
+    vk::StructureChain<
+        vk::PhysicalDeviceFeatures2,
+        vk::PhysicalDeviceVulkan11Features,
+        vk::PhysicalDeviceVulkan13Features,
+        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
+        vk::PhysicalDeviceTimelineSemaphoreFeaturesKHR,     // Timeline semaphores
+        vk::PhysicalDeviceBufferDeviceAddressFeatures    // Buffer device address (vma)
+    > featureChain {
+        {.features = {
+            .sampleRateShading = true,
+            .samplerAnisotropy = true,
+            .shaderInt64 = true}},
+        {.shaderDrawParameters = true},
+        {.synchronization2 =  true, .dynamicRendering = true},
+        {.extendedDynamicState = true},
+        {.timelineSemaphore = true},
+        {.bufferDeviceAddress = true}};
+    Application::initLogicalDevice(featureChain);
 }
 
 void DemoApp::initCommandBuffers() {
@@ -90,7 +115,54 @@ void DemoApp::initDescriptorSetLayouts() {
 }
 
 void DemoApp::initPipelines() {
+    // Compute pipelines
     initBackgroundPipelines();
+
+    // Graphics pipelines
+    initMeshPipeline();
+}
+
+void DemoApp::initMeshPipeline() {
+    auto shadersDir = appDir / "shaders";
+    auto shaderModule = vkutil::loadShaderModule(*device, shadersDir / "mesh.spv");
+
+    vk::PushConstantRange bufferRange {
+        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+        .offset = 0,
+        .size = sizeof(GPUDrawPushConstants)};
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &bufferRange};
+    meshPipelineLayout = device->createPipelineLayout(pipelineLayoutInfo);
+
+    PipelineBuilder pipelineBuilder;
+    pipelineBuilder.setPipelineLayout(meshPipelineLayout);
+    pipelineBuilder.setShaders(shaderModule, shaderModule);
+    // Input assembly
+    pipelineBuilder.setInputTopology(vk::PrimitiveTopology::eTriangleList);
+    // Rasterizer
+    // - Counter clockwise for Y-flip
+    pipelineBuilder.setPolygonMode(vk::PolygonMode::eFill);
+    pipelineBuilder.setCullMode(vk::CullModeFlagBits::eBack, vk::FrontFace::eCounterClockwise);
+    // Multisampling
+    pipelineBuilder.setMultisamplingNone();
+    // Blending
+    pipelineBuilder.disableBlending();
+    // Depth testing
+    pipelineBuilder.enableDepthtest(true, vk::CompareOp::eGreaterOrEqual); // reverse Z
+
+    // // Vertex input
+    // auto bindingDescription = Vertex::getBindingDescription();
+    // auto attributeDescriptions = Vertex::getAttributeDescriptions();
+    // pipelineBuilder.vertexInputInfo.vertexBindingDescriptionCount = 1;
+    // pipelineBuilder.vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    // pipelineBuilder.vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+    // pipelineBuilder.vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
+    pipelineBuilder.setColorAttachmentFormat(drawImage.imageFormat);
+    pipelineBuilder.setDepthAttachmentFormat(depthImage.imageFormat);
+
+    meshPipeline = pipelineBuilder.buildPipeline(*device);
 }
 
 void DemoApp::initBackgroundPipelines() {
@@ -151,6 +223,17 @@ void DemoApp::initBackgroundPipelines() {
 
 void DemoApp::initDescriptorSets() {
     Application::initDescriptorSets();
+}
+
+void DemoApp::initAssets() {
+    auto modelsDir = appDir / "assets" / "models";
+    auto meshes = vkutil::loadGltfMeshes(*this, modelsDir / "basicmesh.glb");
+    if (meshes) {
+        testMeshes = std::move(*meshes);
+        LOG_CORE_INFO("Loaded {} meshes from basicmesh.glb", testMeshes.size());
+    } else {
+        LOG_CORE_ERROR(meshes.error());
+    }
 }
 
 void DemoApp::updateImGui() {
@@ -215,11 +298,6 @@ void DemoApp::drawFrame() {
 
         drawBackground(computeCommandBuffer);
 
-        vkutil::transitionImageLayout(
-            computeCommandBuffer, drawImage.image,
-            vk::ImageLayout::eGeneral,
-            vk::ImageLayout::eTransferSrcOptimal);
-
         computeCommandBuffer.end();
         auto commandBufferInfo = vkinit::commandBufferSubmitInfo(computeCommandBuffer);
         auto waitSubmitInfo = vkinit::semaphoreSubmitInfo(
@@ -233,6 +311,21 @@ void DemoApp::drawFrame() {
     }
     // Graphics pass
     {
+        vkutil::transitionImageLayout(
+            graphicsCommandBuffer, drawImage.image,
+            vk::ImageLayout::eGeneral,
+            vk::ImageLayout::eColorAttachmentOptimal);
+        vkutil::transitionImageLayout(
+            graphicsCommandBuffer, depthImage.image,
+            vk::ImageLayout::eUndefined,
+            vk::ImageLayout::eDepthAttachmentOptimal);
+
+        drawGeometry(graphicsCommandBuffer);
+
+        vkutil::transitionImageLayout(
+            graphicsCommandBuffer, drawImage.image,
+            vk::ImageLayout::eColorAttachmentOptimal,
+            vk::ImageLayout::eTransferSrcOptimal);
         vkutil::transitionImageLayout(
             graphicsCommandBuffer, swapchainImages[imageIndex],
             vk::ImageLayout::eUndefined,
@@ -248,8 +341,6 @@ void DemoApp::drawFrame() {
             graphicsCommandBuffer, swapchainImages[imageIndex],
             vk::ImageLayout::eTransferDstOptimal,
             vk::ImageLayout::eColorAttachmentOptimal);
-
-        // drawScene(commandBuffer, imageIndex);
 
         drawImGui(graphicsCommandBuffer, imageIndex);
 
@@ -318,4 +409,55 @@ void DemoApp::drawBackground(const vk::raii::CommandBuffer& commandBuffer) {
         std::ceil(drawImage.imageExtent.width / 16.0f),
         std::ceil(drawImage.imageExtent.height / 16.0f),
         1);
+}
+
+void DemoApp::drawGeometry(const vk::raii::CommandBuffer& commandBuffer) {
+    auto colorAttachmentInfo = vkinit::colorAttachmentInfo(
+        drawImage.imageView, vk::ImageLayout::eColorAttachmentOptimal);
+    auto depthAttachmentInfo = vkinit::depthAttachmentInfo(
+        depthImage.imageView, vk::ImageLayout::eDepthAttachmentOptimal);
+    vk::Extent2D drawExtent = {drawImage.imageExtent.width, drawImage.imageExtent.height};
+    auto renderingInfo = vkinit::renderingInfo(drawExtent, colorAttachmentInfo, depthAttachmentInfo);
+
+    commandBuffer.beginRendering(renderingInfo);
+
+    // Set viewport and scissor
+    vk::Viewport viewport{
+        .x = 0.0f, .y = 0.0f,
+        .width = static_cast<float>(drawExtent.width),
+        .height = static_cast<float>(drawExtent.height),
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f};
+    commandBuffer.setViewport(0, {viewport});
+    vk::Rect2D scissor{
+        .offset = {0, 0},
+        .extent = drawExtent};
+    commandBuffer.setScissor(0, {scissor});
+
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, meshPipeline);
+
+    GPUDrawPushConstants pushConstants;
+    glm::mat4 view = glm::translate(glm::vec3{ 0,0,-5 });
+	// camera projection
+	glm::mat4 projection = glm::perspective(
+        glm::radians(70.f),
+        (float)drawExtent.width / (float)drawExtent.height,
+        10000.f, 0.1f);
+
+	// invert the Y direction on projection matrix so that we are more similar
+	// to opengl and gltf axis
+	projection[1][1] *= -1;
+    pushConstants.worldMatrix = projection * view;
+    pushConstants.vertexBuffer = testMeshes[2]->meshBuffers.vertexBufferAddress;
+
+    commandBuffer.pushConstants<GPUDrawPushConstants>(
+        meshPipelineLayout, vk::ShaderStageFlagBits::eVertex,
+        0, pushConstants);
+    commandBuffer.bindIndexBuffer(
+        testMeshes[2]->meshBuffers.indexBuffer.buffer, 0, vk::IndexType::eUint32);
+    commandBuffer.drawIndexed(
+        testMeshes[2]->surfaces[0].count, 1,
+        testMeshes[2]->surfaces[0].startIndex, 0, 0);
+
+    commandBuffer.endRendering();
 }

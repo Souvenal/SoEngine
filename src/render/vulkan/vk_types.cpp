@@ -33,14 +33,12 @@ MemoryAllocator::MemoryAllocator(const vk::Instance& instance,
 }
 
 MemoryAllocator::MemoryAllocator(MemoryAllocator&& rhs) noexcept:
-    allocator(rhs.allocator)
-{
-    rhs.allocator = nullptr;
-}
+    allocator(std::exchange(rhs.allocator, nullptr)) { }
 
 MemoryAllocator& MemoryAllocator::operator=(MemoryAllocator&& rhs) noexcept {
-    allocator = rhs.allocator;
-    rhs.allocator = nullptr;
+    if (this != &rhs) {
+        std::swap(allocator, rhs.allocator);
+    }
     return *this;
 }
 
@@ -48,7 +46,6 @@ MemoryAllocator::~MemoryAllocator() {
     if (allocator != nullptr) {
         vmaDestroyAllocator(allocator);
     }
-    allocator = nullptr;
 }
 
 AllocatedBuffer::AllocatedBuffer(VmaAllocator allocator,
@@ -68,32 +65,25 @@ AllocatedBuffer::AllocatedBuffer(VmaAllocator allocator,
     buffer = vk::Buffer(_buffer);
 }
 
-AllocatedBuffer::AllocatedBuffer(AllocatedBuffer&& rhs):
-    buffer(rhs.buffer), allocation(rhs.allocation), allocationInfo(rhs.allocationInfo), allocator(rhs.allocator)
-{
-    rhs.buffer = nullptr;
-    rhs.allocation = nullptr;
-    rhs.allocationInfo = {};
-    rhs.allocator = nullptr;
-}
+AllocatedBuffer::AllocatedBuffer(AllocatedBuffer&& rhs) noexcept
+    : buffer(std::exchange(rhs.buffer, nullptr)),
+      allocation(std::exchange(rhs.allocation, nullptr)),
+      allocationInfo(std::exchange(rhs.allocationInfo, {})),
+      allocator(std::exchange(rhs.allocator, nullptr))
+{}
 AllocatedBuffer& AllocatedBuffer::operator=(AllocatedBuffer&& rhs) {
-    buffer = rhs.buffer;
-    allocation = rhs.allocation;
-    allocationInfo = rhs.allocationInfo;
-    allocator = rhs.allocator;
-    rhs.buffer = nullptr;
-    rhs.allocation = nullptr;
-    rhs.allocationInfo = {};
-    rhs.allocator = nullptr;
+    if (this != &rhs) {
+        std::swap(buffer, rhs.buffer);
+        std::swap(allocation, rhs.allocation);
+        std::swap(allocationInfo, rhs.allocationInfo);
+        std::swap(allocator, rhs.allocator);
+    }
     return *this;
 }
 
 AllocatedBuffer::~AllocatedBuffer() {
     if (allocator && buffer && allocation != VK_NULL_HANDLE)
         vmaDestroyBuffer(allocator, buffer, allocation);
-    buffer = nullptr;
-    allocation = nullptr;
-    allocator = nullptr;
 }
 
 void* AllocatedBuffer::map(vk::DeviceSize offset, vk::DeviceSize size) {
@@ -167,8 +157,9 @@ AllocatedImage::~AllocatedImage() {
 namespace vkutil
 {
 
-QueueFamilyIndices findQueueFamilies(const vk::raii::PhysicalDevice& physicalDevice,
-                                     const vk::raii::SurfaceKHR& surface) {
+QueueFamilyIndices findQueueFamilies(
+        const vk::raii::PhysicalDevice& physicalDevice,
+        const vk::raii::SurfaceKHR& surface) {
     QueueFamilyIndices indices;
     const auto queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
 
@@ -218,16 +209,11 @@ QueueFamilyIndices findQueueFamilies(const vk::raii::PhysicalDevice& physicalDev
     return indices;
 }
 
-void copyAllocatedBuffer(const vk::raii::CommandBuffer& commandBuffer,
-                         const AllocatedBuffer& src,
-                         const AllocatedBuffer& dst,
-                         vk::DeviceSize size)
-{
-    vk::BufferCopy copyRegion{
-        .srcOffset = 0,
-        .dstOffset = 0,
-        .size = size
-    };
+void copyAllocatedBuffer(
+        const vk::raii::CommandBuffer& commandBuffer,
+        const AllocatedBuffer& src,
+        const AllocatedBuffer& dst,
+        vk::BufferCopy copyRegion) {
     commandBuffer.copyBuffer(src.buffer, dst.buffer, copyRegion);
 }
 

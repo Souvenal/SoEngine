@@ -34,6 +34,11 @@ set(TINYGLTF_INSTALL OFF)
 set(TINYGLTF_INSTALL_VENDOR OFF)
 add_subdirectory(tinygltf) # libtinygltf
 
+# fastgltf
+set(FASTGLTF_COMPILE_AS_CPP20 ON)
+set(FASTGLTF_USE_64BIT_FLOAT ON)
+add_subdirectory(fastgltf) # libfastgltf
+
 # ktx
 set(KTX_FEATURE_KTX1        ON)    # Enable KTX1 support
 set(KTX_FEATURE_KTX2        ON)    # Enable KTX2 support

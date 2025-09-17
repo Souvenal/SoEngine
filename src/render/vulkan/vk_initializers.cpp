@@ -82,13 +82,25 @@ vk::RenderingAttachmentInfo colorAttachmentInfo(
 vk::RenderingAttachmentInfo depthAttachmentInfo(
         vk::ImageView imageView,
         vk::ImageLayout layout) {
+    // Use 0 as depth clear value to enable reverse-Z
+    // where 0 means far plane and 1 means near plane
     return vk::RenderingAttachmentInfo{
         .imageView = imageView,
         .imageLayout = layout,
         .loadOp = vk::AttachmentLoadOp::eClear,
         .storeOp = vk::AttachmentStoreOp::eDontCare,
-        .clearValue = vk::ClearDepthStencilValue{1.f, 0}
-    };
+        .clearValue = vk::ClearDepthStencilValue{
+            .depth = 0.0f, .stencil = 0}};
+}
+
+vk::RenderingInfo renderingInfo(
+        vk::Extent2D extent,
+        vk::RenderingAttachmentInfo colorAttachment) {
+    return vk::RenderingInfo{
+        .renderArea = { .offset = { 0, 0 }, .extent = extent },
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &colorAttachment};
 }
 
 vk::RenderingInfo renderingInfo(
@@ -100,8 +112,7 @@ vk::RenderingInfo renderingInfo(
         .layerCount = 1,
         .colorAttachmentCount = 1,
         .pColorAttachments = &colorAttachment,
-        .pDepthAttachment = &depthAttachment,
-        .pStencilAttachment = nullptr};
+        .pDepthAttachment = &depthAttachment};
 }
 
 //> init submit

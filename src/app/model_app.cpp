@@ -663,10 +663,19 @@ void ModelApp::initVertexBuffer() {
         MemoryType::DeviceLocal
     };
 
-    const auto& cmd = vkutil::beginSingleTimeCommands(
-        *device, transferCommandPool);
-    vkutil::copyAllocatedBuffer(cmd, stagingBuffer, vertexBuffer, bufferSize);
-    vkutil::endSingleTimeCommands(cmd, transferQueue);
+    // const auto& cmd = vkutil::beginSingleTimeCommands(
+    //     *device, transferCommandPool);
+    
+    // vkutil::copyAllocatedBuffer(cmd, stagingBuffer, vertexBuffer, bufferSize);
+    // vkutil::endSingleTimeCommands(cmd, transferQueue);
+    immediateSubmitTransfer([&](const vk::raii::CommandBuffer& cmd) {
+        vk::BufferCopy copyRegion {
+            .srcOffset = 0,
+            .dstOffset = 0,
+            .size = bufferSize
+        };
+        vkutil::copyAllocatedBuffer(cmd, stagingBuffer, vertexBuffer, copyRegion);
+    });
 
     LOG_CORE_DEBUG("Vertex buffer is successfully initialized");
 }
@@ -689,7 +698,12 @@ void ModelApp::initIndexBuffer() {
 
     const auto& cmd = vkutil::beginSingleTimeCommands(
         *device, transferCommandPool);
-    vkutil::copyAllocatedBuffer(cmd, stagingBuffer, indexBuffer, bufferSize);
+    vk::BufferCopy indexCopy {
+        .srcOffset = 0,
+        .dstOffset = 0,
+        .size = bufferSize
+    };
+    vkutil::copyAllocatedBuffer(cmd, stagingBuffer, indexBuffer, indexCopy);
     vkutil::endSingleTimeCommands(cmd, transferQueue);
 
     LOG_CORE_DEBUG("Index buffer is successfully initialized");

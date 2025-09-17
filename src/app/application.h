@@ -78,6 +78,8 @@ public:
      */
     virtual void recreateSwapchain();
 
+    GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices) const;
+
 protected:
 
     std::filesystem::path appDir;
@@ -124,9 +126,24 @@ protected:
     vk::raii::CommandPool                   computeCommandPool  { nullptr };
     vk::raii::CommandPool                   transferCommandPool { nullptr };
 
+    struct ImmediateSubmitContext {
+        vk::raii::CommandPool commandPool;
+        vk::raii::Fence fence;
+        
+        ImmediateSubmitContext(const vk::raii::Device& device, uint32_t queueFamilyIndex);
+        ImmediateSubmitContext(const ImmediateSubmitContext&) = delete;
+        ImmediateSubmitContext& operator=(const ImmediateSubmitContext&) = delete;
+    };
+
+    std::unique_ptr<ImmediateSubmitContext> graphicsImmContext;
+    std::unique_ptr<ImmediateSubmitContext> transferImmContext;
+    std::unique_ptr<ImmediateSubmitContext> computeImmContext;
+
     AllocatedImage                 drawImage;
     vk::raii::DescriptorSetLayout  drawImageDescriptorSetLayout { nullptr };
     vk::raii::DescriptorSets       drawImageDescriptorSets { nullptr };
+
+    AllocatedImage                 depthImage;
 
     vk::raii::Semaphore                 semaphore   { nullptr };
     uint64_t                            timelineValue {0};
@@ -190,6 +207,11 @@ protected:
      * @brief Initializes the draw image used for rendering
      */
     virtual void initDrawImage();
+
+    /**
+     * @brief Initializes the depth image used for depth testing
+     */
+    virtual void initDepthImage();
 
     /**
      * @brief Initializes the command pools for graphics, compute, and transfer operations
@@ -257,6 +279,11 @@ protected:
     virtual void initImGui();
 
     /**
+     * @brief Initializes application assets (models, textures, etc.)
+     */
+    virtual void initAssets();
+
+    /**
      * @brief Builds and a summary of the application's capabilities
      */
     virtual void buildCapabilitiesSummary();
@@ -280,6 +307,11 @@ protected:
      * @brief Draws the background
      */
     virtual void drawBackground(const vk::raii::CommandBuffer& commandBuffer);
+
+    /**
+     * @brief Draws the geometry
+     */
+    virtual void drawGeometry(const vk::raii::CommandBuffer& commandBuffer);
 
     /**
      * @brief Draws the 3D scene
@@ -309,6 +341,25 @@ protected:
     [[nodiscard]] std::vector<const char*> getRequiredExtensions() const;
     void checkExtensionSupport(const std::vector<const char*>& requiredExtensions) const;
 
+    template<typename Function>
+    void immediateSubmitGraphics(Function&& function) {
+        immediateSubmitImpl(*graphicsImmContext, graphicsQueue, std::forward<Function>(function));
+    }
+
+    template<typename Function>
+    void immediateSubmitTransfer(Function&& function) const {
+        auto& context = transferImmContext ? *transferImmContext : *graphicsImmContext;
+        auto& queue = transferImmContext ? transferQueue : graphicsQueue;
+        immediateSubmitImpl(context, queue, std::forward<Function>(function));
+    }
+
+    template<typename Function>
+    void immediateSubmitCompute(Function&& function) const {
+        auto& context = computeImmContext ? *computeImmContext : *graphicsImmContext;
+        auto& queue = computeImmContext ? computeQueue : graphicsQueue;
+        immediateSubmitImpl(context, queue, std::forward<Function>(function));
+    }
+
     /**
      * @brief Dumps the contents of an AllocatedBuffer to a binary file
      */
@@ -316,6 +367,13 @@ protected:
         const AllocatedBuffer& buffer,
         vk::DeviceSize bufferSize,
         const std::string& filename);
+    
+private:
+    template<typename Function>
+    void immediateSubmitImpl(
+            ImmediateSubmitContext& context, 
+            const vk::raii::Queue& queue,
+            Function&& function) const;
 };
 
 template<typename... T>
@@ -363,4 +421,34 @@ void Application::initLogicalDevice(const vk::StructureChain<T...>& featureChain
 
     LOG_CORE_DEBUG("Queues are successfully initialized with queue family index: Graphics({}), Present({}), Compute({}), Transfer({})",
                    graphicsIndex, presentIndex, computeIndex, transferIndex);
+}
+
+template<typename Function>
+void Application::immediateSubmitImpl(
+        ImmediateSubmitContext& context, 
+        const vk::raii::Queue& queue,
+        Function&& function) const {
+    // wait for the previous operations to complete
+    auto result = device->waitForFences(*context.fence, vk::True, std::numeric_limits<uint64_t>::max());
+    device->resetFences(*context.fence);
+
+    vk::CommandBufferAllocateInfo allocInfo{
+        .commandPool = *context.commandPool,
+        .level = vk::CommandBufferLevel::ePrimary,
+        .commandBufferCount = 1};
+    auto commandBuffers = device->allocateCommandBuffers(allocInfo);
+    auto cmd = std::move(commandBuffers[0]);
+
+    vk::CommandBufferBeginInfo beginInfo{
+        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
+    cmd.begin(beginInfo);
+    function(cmd);
+    cmd.end();
+
+    vk::SubmitInfo submitInfo{
+        .commandBufferCount = 1,
+        .pCommandBuffers = &*cmd
+    };
+    queue.submit(submitInfo, *context.fence);
+    queue.waitIdle(); // low performance, but simple
 }

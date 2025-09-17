@@ -294,9 +294,16 @@ void ComputeApp::initShaderStorageBuffers() {
             vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
             MemoryType::DeviceLocal
         };
-        auto cmd = vkutil::beginSingleTimeCommands(*device, transferCommandPool);
-        vkutil::copyAllocatedBuffer(cmd, stagingBuffer, buffer, bufferSize);
-        vkutil::endSingleTimeCommands(cmd, transferQueue);
+        // auto cmd = vkutil::beginSingleTimeCommands(*device, transferCommandPool);
+        // vkutil::copyAllocatedBuffer(cmd, stagingBuffer, buffer, bufferSize);
+        // vkutil::endSingleTimeCommands(cmd, transferQueue);
+        immediateSubmitTransfer([&](const vk::raii::CommandBuffer& cmd) {
+            vk::BufferCopy copyRegion {
+                .srcOffset = 0,
+                .dstOffset = 0,
+                .size = bufferSize};
+            vkutil::copyAllocatedBuffer(cmd, stagingBuffer, buffer, copyRegion);
+        });
 
         shaderStorageBuffers.emplace_back(std::move(buffer));
     }

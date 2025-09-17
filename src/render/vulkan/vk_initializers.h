@@ -39,8 +39,12 @@ namespace vkinit
 
 [[nodiscard]] vk::RenderingInfo renderingInfo(
         vk::Extent2D extent,
+        vk::RenderingAttachmentInfo colorAttachment);
+
+[[nodiscard]] vk::RenderingInfo renderingInfo(
+        vk::Extent2D extent,
         vk::RenderingAttachmentInfo colorAttachment,
-        vk::RenderingAttachmentInfo depthAttachment = {});
+        vk::RenderingAttachmentInfo depthAttachment);
 
 //> init submit
 [[nodiscard]] vk::CommandBufferSubmitInfo commandBufferSubmitInfo(

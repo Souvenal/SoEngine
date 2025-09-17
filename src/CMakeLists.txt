@@ -11,6 +11,7 @@ target_link_libraries(${TARGET} PRIVATE
     glfw
     glm
     tinygltf
+    fastgltf
     ktx
     imgui
 )
@@ -51,6 +52,7 @@ target_compile_definitions(VulkanCppModule PUBLIC
     # VULKAN_HPP_DEFAULT_DISPATCHER=1
     VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE=1
     VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
+    VULKAN_HPP_HANDLES_MOVE_EXCHANGE
 )
 target_include_directories(VulkanCppModule
     PRIVATE

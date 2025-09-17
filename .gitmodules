@@ -17,3 +17,6 @@
 [submodule "3rdparty/ktx"]
 	path = 3rdparty/ktx
 	url = git@github.com:KhronosGroup/KTX-Software.git
+[submodule "3rdparty/fastgltf"]
+	path = 3rdparty/fastgltf
+	url = git@github.com:spnda/fastgltf.git
